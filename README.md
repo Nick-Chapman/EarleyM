@@ -2,32 +2,30 @@
 
 Haskell implementation of Monadic-style combinators for chart parsing.
 
-These combinators support left-recursive and ambiguous grammars - but feel like plain old monadic parser combinators.
-
-This Haskell implementation re-work an earlier Ocaml implementation:
+These combinators support left-recursive and ambiguous grammars, but provide a standard monadic parser interface.
+This implementation re-works an earlier Ocaml implementation:
 https://github.com/Nick-Chapman/ocaml-chart-parsers
-
-But with the following changes:
+with the following changes:
 
 * Purely functional implementation - of course, this is Haskell!
 
-* Improved interface: No need to union the types of all non-terminals. Two monadic layers, for: Gram, Lang
+* Improved interface: No need to union the types of all non-terminals. Two monadic layers: Gram, Lang
 
-* Lots of unit tests...
+* Lots of unit tests.
 
-* Including a fleshed out example of an expression language, supporting:
+* Fleshed out example of an expression language, including:
     * identifiers, numbers
     * left associating binary operator
     * function application by juxtaposition
     * lambda abstraction
-
-Demonstrating:
+    
+  Demonstrating:
     * Parsing without a separate lexer (this parser works directly on the characters as tokens).
     * Handling whitespace correctly, without the need to peek ahead:
         * "f 1x"  is rejected
         * "f(1)x" is accepted
 
-Summary of the Haskell interface: (via NewLang):
+Summary of the Haskell interface: (from NewLang):
 
 ```haskell
 data NT a
