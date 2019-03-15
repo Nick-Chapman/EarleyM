@@ -1,0 +1,181 @@
+module JuxtaExpExample(tests) where
+
+import Prelude hiding (fail,exp)
+import qualified Data.Char as Char
+
+import NewLang
+import Testing
+
+digitOfChar :: Char -> Int
+digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
+
+data Exp
+  = Var String
+  | Num Int
+  | App Exp Exp   
+  | Lam String Exp 
+  | Add Exp Exp   
+  deriving (Eq)
+
+instance Show Exp where -- simple, fully parenthesized, pretty-printer
+  show e = case e of
+    Var s -> s
+    Num i -> show i
+    App e1 e2 -> "(" ++ show e1 ++ " " ++ show e2 ++ ")"
+    Lam s body -> "(\\" ++ s ++ "." ++ show body ++ ")"
+    Add e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
+
+lang :: Lang Char (Gram Exp)
+
+data OpenOrClosedOnRight = Open | Closed
+
+many :: Gram a -> Gram [a]  -- right recursion
+many p = alts [return [], do x <- p; xs <- many p; return (x : xs)]
+
+lang = do
+  tok <- token
+  let satisfy f = do c <- tok; if f c then return c else fail
+  let sym x = do _ <- satisfy (== x); return ()
+  let alpha = satisfy Char.isAlpha
+  let numer = satisfy Char.isDigit
+  let digit = do c <- numer; return (digitOfChar c)
+  let white = do _ <- satisfy Char.isSpace; return ()
+  digits <- fix $ \digits -> return $ alts [
+    do n <- digits; d <- digit; return (10 * n + d),
+    digit
+    ]
+  let ident = do x <- alpha; xs <- many (alts [alpha,numer]); return (x : xs) 
+  let ws = do white; alts [ws,return ()] -- required white space
+  let ows = alts [return (),ws] -- optional white space
+  let var = do s <- ident; return (Var s)
+  let num = do n <- digits; return (Num n)
+  let parenthesized thing = do sym '('; ows; x <- thing; ows; sym ')'; return x
+  let lambda exp = do sym '\\'; ows; x <- ident; ows; sym '.'; ows; e <- exp; return (Lam x e)
+  let lambdarized exp = alts [exp, lambda (lambdarized exp)]
+  exp <- fix $ \exp -> do
+    let leftOpenAtom =   do e <- alts [var,num];                  return (e,Open)
+    let leftClosedAtom = do e <- parenthesized (lambdarized exp); return (e,Closed)
+    let atom = alts [leftClosedAtom, leftOpenAtom]
+    app <- fix $ \app -> return $ alts [
+      atom,
+      do
+        (a,oc1) <- app;
+        gap <- alts [return False, do ws; return True]
+        (b,oc2) <- case (oc1,gap) of (Open,False) -> leftClosedAtom; _ -> atom
+        return (App a b, oc2)
+      ]
+    let application = do (a,_) <- app; return a
+    let addition = alts [
+          application,
+          do a <- exp; ows; sym '+'; ows; b <- application; return (Add a b)
+          ]
+    return addition
+  let start = do ows; e <- lambdarized exp; ows; return e
+  return start
+
+
+tests :: [IO Bool]
+tests = [
+
+  run "a"           "Yes a",
+  run "(a)"         "Yes a",
+  run "ab"          "Yes ab",
+  run "1"           "Yes 1",
+  run "12"          "Yes 12",
+  run "a1"          "Yes a1",
+  run "1a"          "No", --No here
+
+  run "a b"         "Yes (a b)",
+  run "(a)b"        "Yes (a b)",
+  run "a(b)"        "Yes (a b)",
+  run "1 2"         "Yes (1 2)", -- type silly
+
+  run "a b c"       "Yes ((a b) c)",
+  run "a(b)c"       "Yes ((a b) c)",
+  run "(a b)c"      "Yes ((a b) c)",
+  run "(a b) c"     "Yes ((a b) c)",
+  
+  run "a(b c)"      "Yes (a (b c))",
+  run "a (b c)"     "Yes (a (b c))",
+  
+  run "a+b"         "Yes (a+b)",
+  run "a+b+c"       "Yes ((a+b)+c)",
+  run "(a+b)+c"     "Yes ((a+b)+c)",
+  run "a+(b+c)"     "Yes (a+(b+c))",
+
+  run "a + b c d + e"   "Yes ((a+((b c) d))+e)",
+
+
+  -- examples originally copied from parser4v tests
+
+  run "4"           "Yes 4",
+  run "42"          "Yes 42",
+  run "4 "          "Yes 4",
+  run " 4"          "Yes 4",
+  run "x"           "Yes x",
+  run "xy"          "Yes xy",
+  run "x4"          "Yes x4",
+  run "x y"         "Yes (x y)",
+  run "  x  y  "    "Yes (x y)",
+  run "x y z"       "Yes ((x y) z)",
+  run "x 4"         "Yes (x 4)",
+  run "x 4 y"       "Yes ((x 4) y)",
+  run "4 y"         "Yes (4 y)", --type silly
+  run "(4)"         "Yes 4",
+  run " ( 4 ) "     "Yes 4",
+  run "((4))"       "Yes 4",
+  run "x (y)"       "Yes (x y)",
+  run "(x) y"       "Yes (x y)",
+  run "(x) (y)"     "Yes (x y)",
+  run "((x) (y))"   "Yes (x y)",
+  run "(x y) z"     "Yes ((x y) z)",
+  run "x (y z)"     "Yes (x (y z))",
+  run "1+2"         "Yes (1+2)",
+  run " 1 + 2 "     "Yes (1+2)",
+  run "(1+2)+3"     "Yes ((1+2)+3)",
+  run "1+(2+3)"     "Yes (1+(2+3))",
+  run "1+2+3"       "Yes ((1+2)+3)",
+
+  run "\\x.x"           "Yes (\\x.x)",
+  run " \\ x . x "      "Yes (\\x.x)",
+  run "\\x.\\y.x 1"     "Yes (\\x.(\\y.(x 1)))",
+  run "\\x.(\\y.x) 1"   "Yes (\\x.((\\y.x) 1))",
+  run "(\\x.\\y.x) 1"   "Yes ((\\x.(\\y.x)) 1)",
+
+  -- would like a more flexible approach to the syntax of lambda, w,r,t the interaction with app/add
+  -- but it's really tricky to write the grammar !
+  {-
+  run "f \\x.x"         "Yes (f (\\x.x))",
+  run "f \\x.x+y"       "Yes (f (\\x.(x+y)))",
+  run "f\\x.g\\y.k x y" "Yes (f (\\x.(g (\\y.((k x) y)))))",
+  run "f+\\x.x"         "Yes (f+(\\x.x))",
+  run "f+\\x.x+y"       "Yes (f+(\\x.(x+y)))",
+  run "f+\\x.x+\\y.y"   "Yes (f+(\\x.(x+(\\y.y))))",
+-}
+  -- so here we have example with the currently necesssary parens added...
+  run "f(\\x.x)"            "Yes (f (\\x.x))",
+  run "f(\\x.x+y)"          "Yes (f (\\x.(x+y)))",
+  run "f(\\x.g(\\y.k x y))" "Yes (f (\\x.(g (\\y.((k x) y)))))",
+  run "f+(\\x.x)"           "Yes (f+(\\x.x))",
+  run "f+(\\x.x+y)"         "Yes (f+(\\x.(x+y)))",
+  run "f+(\\x.x+(\\y.y))"   "Yes (f+(\\x.(x+(\\y.y))))",
+  
+  run "(\\f.\\x.f(f x))(\\x.x+1)5"                       "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
+  run " ( \\ f . \\ x . f ( f x ) ) ( \\ x . x + 1 ) 5 " "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
+
+  run " "   "No",
+  run "#"   "No",
+  run ")"   "No",
+  run "("   "No",
+  run "()"  "No",
+  run "4)"  "No",
+  run "4#"  "No",
+  run "4x"  "No",
+  run "42x" "No",
+
+  run ""    "No"
+  ]
+  where
+    tag = "juxta-exp"
+    run input expect = printCompare tag input actual expect
+      where actual = show (NewLang.parse lang input)

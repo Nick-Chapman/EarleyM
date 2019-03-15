@@ -1,0 +1,5 @@
+jbuild
+*.o
+*.hi
+main.exe
+main.out
