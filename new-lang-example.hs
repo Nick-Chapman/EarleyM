@@ -252,7 +252,7 @@ tests9 = [
       let x = do _ <- tok; return ()
       fix $ \xs -> return $ alts [
         x,
-        do xs; x -- Right Recursion
+        do x; xs -- Right Recursion
         ]
 
 
