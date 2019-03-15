@@ -1,0 +1,16 @@
+
+(rule
+ ((targets (main.exe))
+  (deps (main.hs new-lang.hs chart.hs pipe.hs testing.hs new-lang-example.hs juxta-exp-example.hs oleg-example.hs))
+  (action "ghc -Wall -fno-warn-name-shadowing --make main new-lang chart pipe testing new-lang-example juxta-exp-example oleg-example -o main.exe")))
+
+(rule 
+ ((targets (main.out))
+  (deps (main.exe))
+  (action "./main.exe | tee main.out")))
+
+(alias 
+ ((name DEFAULT) 
+  (deps (main.exe
+         main.out
+         ))))

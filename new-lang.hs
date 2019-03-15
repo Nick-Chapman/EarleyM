@@ -1,10 +1,10 @@
-module NewLang(NT,Gram,alts,fail,Outcome(..), --re-exports
-               Lang,token,declare,produce,fix,parse) where
+module NewLang(NT,Gram,alts,fail,Outcome(..),Pos, --re-exports
+               Lang,token,declare,produce,fix,parse,parseEffort) where
 
 import Prelude hiding(fail)
 import Control.Monad(liftM, ap)
 
-import Chart(Gram,alts,fail,Outcome)
+import Chart(Gram,alts,fail,Outcome,Pos)
 import Chart(Production,NT)
 import qualified Chart
 
@@ -65,3 +65,13 @@ parse lang input =
         (gram,productions) = runLang lang (referenceNT tok)
         underlying_lang = Chart.mkLang tok gram productions
         outcome = Chart.parse underlying_lang input
+
+parseEffort :: Lang t (Gram a) -> [t] -> Int
+parseEffort lang input =
+  Chart.withNT $ f
+  where
+    f tok = outcome
+      where
+        (gram,productions) = runLang lang (referenceNT tok)
+        underlying_lang = Chart.mkLang tok gram productions
+        outcome = Chart.parseEffort underlying_lang input
