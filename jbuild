@@ -1,8 +1,8 @@
 
 (rule
  ((targets (main.exe))
-  (deps (main.hs new-lang.hs chart.hs pipe.hs testing.hs new-lang-example.hs juxta-exp-example.hs oleg-example.hs))
-  (action "ghc -Wall -fno-warn-name-shadowing --make main new-lang chart pipe testing new-lang-example juxta-exp-example oleg-example -o main.exe")))
+  (deps ((glob_files *.hs)))
+  (action "ghc -Wall -fno-warn-name-shadowing *.hs -o main.exe")))
 
 (rule 
  ((targets (main.out))

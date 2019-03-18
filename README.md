@@ -39,17 +39,17 @@ fail :: Gram a
 alts :: [Gram a] -> Gram a
 token :: Lang t (Gram t)
 
-declare :: Lang t (NT a, Gram a)
+declare :: String -> Lang t (NT a, Gram a)
 produce :: NT a -> Gram a -> Lang t ()
 
 data Outcome a = Yes a | Amb Int [a] | No -- TODO: Position info
 parse :: Lang t (Gram a) -> [t] -> Outcome a
 
-fix :: (Gram a -> Lang t (Gram a)) -> Lang t (Gram a) -- convenience, defined using declare/produce
+fix :: String -> (Gram a -> Lang t (Gram a)) -> Lang t (Gram a) -- convenience, defined using declare/produce
 ```
 
 Build/run (from the jbuild):
 ```
-ghc -Wall -fno-warn-name-shadowing --make main new-lang chart pipe testing chart-examples new-lang-example juxta-exp-example oleg-example -o main.exe
-./main.exe 
+ghc -Wall -fno-warn-name-shadowing *.hs -o main.exe
+./main.exe
 ```

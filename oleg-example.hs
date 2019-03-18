@@ -1,8 +1,8 @@
 module OlegExample(tests) where
 
 import Prelude hiding (fail,exp,seq)
-import NewLang
 import Testing
+import Chart
 
 (-->) :: NT a -> Gram a -> Lang t ()
 (-->) = produce
@@ -30,10 +30,10 @@ lang :: Lang Char (Gram String)
 lang = do
   tok <- token
   let term x = do c <- tok; if c == x then return [c] else fail
-  (s',s) <- declare
-  (a',a) <- declare
-  (b',b) <- declare
-  (c',c) <- declare
+  (s',s) <- declare"s"
+  (a',a) <- declare"a"
+  (b',b) <- declare"b"
+  (c',c) <- declare"c"
 
   s' --> alts [seq [s, a, c], c]
   a' --> alts [b, seq [term 'a', c, term 'a']]
@@ -49,11 +49,10 @@ tests = [
   run "bababaa" (Yes "(b(a(b(aba))a))"),
   run "babaaba" (Yes "((b(aba))(aba))"),
   run "babab"   (Yes "(b(aba)b)"),
-  run "a"  No,
-  run "aa" No,
-  run ""  No
+  run "a"  (No 1),
+  run "aa" (No 1),
+  run ""  (No 1)
   ]
   where
     tag = "oleg"
-    run input expect = printCompare tag input actual expect
-      where actual = NewLang.parse lang input
+    (run,_runX) = runTest tag lang

@@ -2,9 +2,8 @@ module JuxtaExpExample(tests) where
 
 import Prelude hiding (fail,exp)
 import qualified Data.Char as Char
-
-import NewLang
 import Testing
+import Chart
 
 digitOfChar :: Char -> Int
 digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
@@ -27,7 +26,7 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
 
 lang :: Lang Char (Gram Exp)
 
-data OpenOrClosedOnRight = Open | Closed
+data OpenOrClosedOnRight = Open | Closed deriving Show
 
 many :: Gram a -> Gram [a]  -- right recursion
 many p = alts [return [], do x <- p; xs <- many p; return (x : xs)]
@@ -40,7 +39,7 @@ lang = do
   let numer = satisfy Char.isDigit
   let digit = do c <- numer; return (digitOfChar c)
   let white = do _ <- satisfy Char.isSpace; return ()
-  digits <- fix $ \digits -> return $ alts [
+  digits <- fix"digits" $ \digits -> return $ alts [
     do n <- digits; d <- digit; return (10 * n + d),
     digit
     ]
@@ -52,11 +51,11 @@ lang = do
   let parenthesized thing = do sym '('; ows; x <- thing; ows; sym ')'; return x
   let lambda exp = do sym '\\'; ows; x <- ident; ows; sym '.'; ows; e <- exp; return (Lam x e)
   let lambdarized exp = alts [exp, lambda (lambdarized exp)]
-  exp <- fix $ \exp -> do
+  exp <- fix"exp" $ \exp -> do
     let leftOpenAtom =   do e <- alts [var,num];                  return (e,Open)
     let leftClosedAtom = do e <- parenthesized (lambdarized exp); return (e,Closed)
     let atom = alts [leftClosedAtom, leftOpenAtom]
-    app <- fix $ \app -> return $ alts [
+    app <- fix"app" $ \app -> return $ alts [
       atom,
       do
         (a,oc1) <- app;
@@ -83,7 +82,7 @@ tests = [
   run "1"           "Yes 1",
   run "12"          "Yes 12",
   run "a1"          "Yes a1",
-  run "1a"          "No", --No here
+  run "1a"          "No 2", --No here
 
   run "a b"         "Yes (a b)",
   run "(a)b"        "Yes (a b)",
@@ -163,19 +162,18 @@ tests = [
   run "(\\f.\\x.f(f x))(\\x.x+1)5"                       "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
   run " ( \\ f . \\ x . f ( f x ) ) ( \\ x . x + 1 ) 5 " "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
 
-  run " "   "No",
-  run "#"   "No",
-  run ")"   "No",
-  run "("   "No",
-  run "()"  "No",
-  run "4)"  "No",
-  run "4#"  "No",
-  run "4x"  "No",
-  run "42x" "No",
+  run " "   "No 2",
+  run "#"   "No 1",
+  run ")"   "No 1",
+  run "("   "No 2",
+  run "()"  "No 2",
+  run "4)"  "No 2",
+  run "4#"  "No 2",
+  run "4x"  "No 2",
+  run "42x" "No 3",
 
-  run ""    "No"
+  run ""    "No 1"
   ]
   where
     tag = "juxta-exp"
-    run input expect = printCompare tag input actual expect
-      where actual = show (NewLang.parse lang input)
+    (run,_runX) = runTestParseThen (\_ o -> show o) tag lang

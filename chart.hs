@@ -1,183 +1,269 @@
-{-#LANGUAGE ExplicitForAll, Rank2Types, ExistentialQuantification #-}
+{-#LANGUAGE Rank2Types, ExistentialQuantification #-}
 
-module Chart (NT,withNT,
-              Gram,get,alt,alts,fail,
-              Production,produce,
-              Lang,mkLang,
-              Outcome(..),Pos,parse,
-              parseEffort)
-       where
+module Chart (NT,Gram,alts,fail,
+              Lang,token,declare,produce,fix,
+              Partial,Outcome(..),Pos,doParse)
+where
 
 import Prelude hiding (exp,fail,lex)
 import Control.Monad(liftM, ap)
-import qualified Data.List as List
-import qualified Data.Maybe as Maybe
 import qualified Data.Map as Map
 import Data.Map(Map)
-
 import qualified Data.HMap as HMap
 import Data.HMap(HKey,HMap)
-
 import qualified Pipe
 import Pipe(Pipe)
 
-filterMap :: (a -> Maybe b) -> [a] -> [b]
-filterMap f xs = Maybe.catMaybes (List.map f xs)
 
--- standard instances
+data NT a = forall x. NT String (a -> String) (HKey x (StateValue a))
+
+withNT :: Show a => String -> (NT a -> b) -> b
+withNT name k = HMap.withKey $ \key -> k (NT name show key)
+
+withKeyOfNT :: NT a -> (forall x. HKey x (StateValue a) -> b) -> b
+withKeyOfNT (NT _ _ key) k = k key
+
+instance Show (NT a) where
+  show (NT name _ _) = name
+
+
+data Gram a = Alts [Gram a] | Ret a | forall b. Get (NT b) (b -> Gram a)
 
 instance Functor Gram where fmap = liftM
-instance Applicative Gram where pure = unit; (<*>) = ap
-instance Monad Gram where (>>=) = bind
+instance Applicative Gram where pure = return; (<*>) = ap
 
--- non primitive combinators
+instance Monad Gram where
+  return = Ret
+  (>>=) gram f = case gram of
+    Alts gs -> Alts (do g <- gs; return (g >>= f))
+    Get nt k -> Get nt (\a -> k a >>= f)
+    Ret a  -> f a
+
+referenceNT :: NT a -> Gram a
+referenceNT nt = Get nt Ret
 
 alts :: [Gram a] -> Gram a
-alts = foldl alt fail
-
--- types
-
-data NT a = forall x. NT (HKey x (PipeMap a))
-
-withKeyOfNT :: NT a -> (forall x. HKey x (PipeMap a) -> b) -> b
-withKeyOfNT (NT key) k = k key
-
-data Production = forall a. Production (NT a) (Gram a)
-
-type Pos = Int
-
-type Step = (Pos,Pos,Production)
-
-type PipeMap a = Map Pos (Pipe (a,Pos) Step)
-
-type State = HMap
-
-data Gram a = forall b. Read (NT b) (b -> Gram a) 
-            | Prod a
-            | Done
-            | Alt (Gram a) (Gram a)
-
-data Outcome a = Yes a
-               | Amb Int [a] 
-               | No --Pos -- No useful Pos info yet!
-               deriving (Show,Eq)
-
-withNT :: (NT a -> b) -> b
-withNT k = HMap.withKey $ \key -> k (NT key)
-
-unit :: a -> Gram a
-unit a = Prod a
-
-get :: NT a -> Gram a
-get nt = Read nt Prod
-
-alt :: Gram a -> Gram a -> Gram a
-alt = Alt
+alts = Alts
 
 fail :: Gram a
-fail = Done
+fail = Alts []
 
-bind :: Gram a -> (a -> Gram b) -> Gram b
-bind gram f = case gram of
-   Done -> Done
-   Alt g1 g2 -> Alt (bind g1 f) (bind g2 f)
-   Read nt k -> Read nt (\a -> bind (k a) f)
-   Prod a  -> f a
 
-produce :: NT a -> [Gram a] -> Production
-produce nt gs = Production nt (alts gs)
+data Rule = forall a. Rule (NT a) (Gram a)
 
-data Lang t a = Lang { lex :: NT t,
-                       start :: NT a,
-                       productions :: [Production] }
+isRuleKeyedBy :: NT a -> Rule -> Bool
+isRuleKeyedBy nt1 (Rule nt2 _) =
+  withKeyOfNT nt1 $ \key1 ->
+  withKeyOfNT nt2 $ \key2 ->
+  HMap.unique key1 == HMap.unique key2
 
-mkLang :: NT t -> Gram a -> [Production] -> Lang t a
-mkLang lex accept productions =
-  withNT $ \start->
-  let prodStart = Production start accept in
-  Lang lex start (prodStart : productions)
 
-parse :: Lang t a -> [t] -> Outcome a
-parse lang input =
-  let (_,outcome) = doParse lang input in
-  outcome
+data Lang t a = Lang { runLang :: Gram t -> (a, [Rule]) }
 
-parseEffort :: Lang t a -> [t] -> Int
-parseEffort lang input =
-  let (effort,_) = doParse lang input in
-  effort
+instance Functor (Lang t) where fmap = liftM
+instance Applicative (Lang t) where pure = return; (<*>) = ap
 
-doParse :: Lang t a -> [t] -> (Int,Outcome a)
-doParse lang input =
-  runString input initPos initState
+instance Monad (Lang t) where
+  return a = Lang$ \_ -> (a,[])
+  (>>=) m f = Lang$ \t ->
+    let (a,ps1) = runLang m t in
+    let (b,ps2) = runLang (f a) t in
+    (b,ps1++ps2)
+
+token :: Lang t (Gram t)
+token = Lang$ \t -> (t,[])
+
+createNamedNT :: Show a => String -> Lang t (NT a)
+createNamedNT name = Lang$ \_ -> withNT name $ \nt -> (nt,[])
+
+produce :: NT a -> Gram a -> Lang t ()
+produce nt gram = Lang$ \_ -> ((),[Rule nt gram])
+
+declare :: Show a => String -> Lang t (NT a, Gram a)
+declare name = do
+  nt <- createNamedNT name
+  return (nt, referenceNT nt)
+  
+fix :: Show a => String -> (Gram a -> Lang t (Gram a)) -> Lang t (Gram a)
+fix name f = do
+  (nt,gram) <- declare name
+  fixed <- f gram
+  () <- produce nt fixed
+  return fixed
+
+
+type Pos = Int
+type From a = (NT a, Pos)
+type Upto a = (a, Pos)
+
+data Partial
+  = forall a. Predict (From a)
+  | forall a. Complete (From a) (Upto a)
+
+instance Show Partial where
+  show (Predict (NT name _ _,pos1)) =
+    "? " ++ name ++ "/" ++ show pos1
+  show (Complete (NT name aShow _,pos1) (a,pos2)) =
+    "! " ++ name ++ "/" ++ show pos1 ++ " --> " ++ show pos2 ++ " : " ++ aShow a
+
+
+data Item -- An Earley item: A located/dotted Rule. i.e. Rule + 2 positions
+  = forall a. Item Pos (NT a) Pos (Gram a)
+
+itemOfRule :: Pos -> Rule -> Item
+itemOfRule pos (Rule nt gram) = Item pos nt pos gram
+
+
+type Chan a = Pipe (Upto a) Item -- Is this abstraction worthwhile?
+
+createChanFromReader :: (Upto a -> Item) -> Chan a
+createChanFromReader = Pipe.firstRead
+
+readChan :: (Upto a -> Item) -> Chan a -> (Chan a, [Item])
+readChan = Pipe.read
+
+writeChan :: Upto a -> Chan a -> (Chan a, [Item])
+writeChan = Pipe.write
+
+
+type State = HMap
+type StateValue a = Map Pos (Chan a)
+
+existsChan :: State -> From a -> Bool
+existsChan s (nt,pos) =
+  withKeyOfNT nt $ \key ->
+  case HMap.lookup key s of
+   Nothing -> False
+   Just m -> Map.member pos m
+
+lookChan :: State -> From a -> Maybe (Chan a)
+lookChan s (nt,pos) =
+  withKeyOfNT nt $ \key ->
+  case HMap.lookup key s of
+   Nothing -> Nothing
+   Just m -> Map.lookup pos m
+
+insertChan :: State -> From a -> Chan a -> State
+insertChan s (nt,pos) chan =
+  withKeyOfNT nt $ \key ->
+  let m = HMap.findWithDefault Map.empty key s in
+  let m' = Map.insert pos chan m in
+  HMap.insert key m' s
+
+fullParseAt :: NT a -> Pos -> State -> Bool
+fullParseAt start pos s = not (null results)
   where
-    initPos = 0
-    initState = runProductions 0 (productions lang) HMap.empty
-    lenInput = length input
-    runString input pos state0 =
-      let effort = effortState (productions lang) pos state0  in
-      case input of
+    results = do
+      (a,p) <- elems
+      if p == pos then [a] else []
+    elems =
+      case lookChan s (start,0) of
+       Just chan -> Pipe.elems chan
+       Nothing -> error "startChan missing"
+                  
+
+data Outcome a = No Pos | Yes a | Amb Int [a] deriving (Show,Eq)
+
+outcomeOfState :: Pos -> Bool -> NT a -> State -> Outcome a
+outcomeOfState pos stillLooking start s = outcome
+  where
+    outcome = case results of
       [] ->
-        let results =
-              withKeyOfNT (start lang) $ \key ->
-              let pmap = HMap.findWithDefault Map.empty key state0 in
-              let xs = Pipe.elems (Map.findWithDefault Pipe.empty initPos pmap) in
-              filterMap (\(a,q) -> if q==lenInput then Just a else Nothing) xs in
-        let outcome = case results of
-              [] -> No --lenInput
-              [x] -> Yes x
-              xs -> Amb (length xs) xs
-        in
-        (effort, outcome)
-      c : string ->
-        let state1 = runSteps [ (pos, pos+1, Production (lex lang) (Prod c)) ] state0 in
-        let state2 = runProductions (pos+1) (productions lang) state1 in
-        runString string (pos+1) state2
+        if stillLooking
+        then No (pos+1) -- run out of tokens
+        else No pos -- final token broke the parse
+      [x] -> Yes x
+      xs -> Amb (length xs) xs
+    results = do
+      (a,p) <- elems
+      if p == pos then [a] else []
+    elems =
+      case lookChan s (start,0) of
+       Just chan -> Pipe.elems chan
+       Nothing -> error "startChan missing"
 
-effortState :: [Production] -> Pos -> State -> Int
-effortState productions finalPos state = sum $ do
-  pos <- [0..finalPos]
-  Production nt _ <- productions
-  withKeyOfNT nt $ \key ->
-    let pmap = HMap.findWithDefault Map.empty key state in
-    let pipe = Map.findWithDefault Pipe.empty pos pmap in
-    return (length (Pipe.elems pipe))
+doParse :: (Show t, Show a) => Lang t (Gram a) -> [t] -> ([Partial],Outcome a)
+doParse lang input =
+  withNT "T" $ \token ->
+  withNT "S" $ \start ->
+  let (gram,rules) = runLang lang (referenceNT token) in
+  go token (start,gram) rules input  
 
-runProductions :: Pos -> [Production] -> State -> State
-runProductions pos prods s = foldr (runProduction pos) s prods
+go :: NT t -> (NT a, Gram a) -> [Rule] -> [t] -> ([Partial], Outcome a)
+go token (start,gram) rules input =
+  let state0 = insertChan HMap.empty (start,0) Pipe.empty in
+  let startItem = Item 0 start 0 gram in
+  let (partials1,state1) = execItemsWithRules rules [startItem] state0 in
+  let (partials2,outcome) = loop 0 state1 input in
+  (partials1 ++ partials2, outcome)
+  where
+    loop pos s [] =
+      ([], outcomeOfState pos stillLooking start s)
+      where
+        stillLooking = existsChan s (token,pos)
+    loop pos s (x:xs) =
+      let from = (token,pos) in
+      case lookChan s from of
+       Nothing ->
+         if fullParseAt start pos s
+         then ([], No (pos+1)) -- previous token completed the parse, but doesn't want more
+         else ([], No pos) -- previous token broke the parse
+       Just chan ->
+         let upto = (x,pos+1) in
+         let partial = Complete from upto in -- TODO: dont bother to add partials for tokens?
+         let (chan',items) = writeChan upto chan in
+         let s2 = insertChan s from chan' in
+         let (partials1,s3) = execItemsWithRules rules items s2 in
+         let (partials2,outcome) = loop (pos+1) s3 xs in
+         (partial : partials1 ++ partials2, outcome)
 
-runProduction :: Pos -> Production -> State -> State
-runProduction pos prod = runSteps [(pos,pos,prod)]
+execItemsWithRules :: [Rule] -> [Item] -> State -> ([Partial],State)
+execItemsWithRules rules items state = execItems items state
+  where
+    findRules :: NT a -> [Rule]
+    findRules nt = do
+      rule <- rules
+      if isRuleKeyedBy nt rule then return rule else []
 
-runSteps :: [Step] -> State -> State
-runSteps [] state = state
-runSteps ((p1,p2,Production nt gram) : steps) state0 = case gram of
-  Done -> runSteps steps state0
-  Alt g1 g2 -> runSteps ((p1,p2,Production nt g1):(p1,p2,Production nt g2):steps) state0
-  Prod a ->
-    let (state,steps') = writeState nt p1 (a,p2) state0 in
-    runSteps (steps' ++ steps) state
-  Read ntR k ->
-    let reader (a,p3) = (p1,p3, Production nt (k a)) in
-    let (state,steps') = readState ntR p2 reader state0 in
-    runSteps (steps' ++ steps) state
+    execItems :: [Item] -> State -> ([Partial],State)
+    execItems [] s = ([],s)
+    execItems (Item p1 nt p2 gram : items) s = case gram of
+      Alts gs -> execItems ((do g <- gs; return (Item p1 nt p2 g)) ++ items) s
+      Ret a ->
+        push partials (execItems (items1 ++ items) s1)
+        where
+          partials = [Complete from upto]
+          (s1,items1) = produceState s from upto
+          from = (nt,p1)
+          upto = (a,p2)
+      Get ntB fB ->
+        push partials (execItems (items1 ++ items) s1)
+        where
+          (partials,s1,items1) = awaitState s from reader 
+          from = (ntB,p2)
+          reader (b,p3) = (Item p1 nt p3 (fB b))
+      where
+        push ps1 (ps2,s) = (ps1++ps2,s)
 
-writeState :: NT a -> Pos -> (a,Pos) -> State -> (State,[Step])
-writeState nt pos item state0 =
-  withKeyOfNT nt $ \key ->
-  let pmap0 = HMap.findWithDefault Map.empty key state0 in
-  let pipe0 = Map.findWithDefault Pipe.empty pos pmap0 in
-  let (pipe,steps) = Pipe.write item pipe0 in
-  let pmap = Map.insert pos pipe pmap0 in
-  let state = HMap.insert key pmap state0 in
-  (state,steps)
+    produceState :: State -> From a -> Upto a -> (State, [Item])
+    produceState s from upto =
+      case lookChan s from of
+       Nothing -> error ("produceState, missing channel for: " ++ show from)
+       Just chan -> (insertChan s from chan', items)
+         where (chan',items) = writeChan upto chan
 
-readState :: NT a -> Pos -> ((a,Pos) -> Step) -> State -> (State,[Step])
-readState nt pos reader state0 =
-  withKeyOfNT nt $ \key ->
-  let pmap0 = HMap.findWithDefault Map.empty key state0 in
-  let pipe0 = Map.findWithDefault Pipe.empty pos pmap0 in
-  let (pipe,steps) = Pipe.read reader pipe0 in
-  let pmap = Map.insert pos pipe pmap0 in
-  let state = HMap.insert key pmap state0 in
-  (state,steps)
+    awaitState :: State -> From a -> (Upto a -> Item) -> ([Partial], State, [Item])
+    awaitState s from reader =
+      case lookChan s from of
+       Nothing -> (partials, insertChan s from chan, items)
+         where chan = createChanFromReader reader
+               items = predict from
+               partials = [Predict from]
+       Just chan ->
+         ([], insertChan s from chan', items)
+         where (chan',items) = readChan reader chan
+
+    predict :: From a -> [Item]
+    predict (nt,pos) = do
+      rule <- findRules nt
+      return (itemOfRule pos rule)
