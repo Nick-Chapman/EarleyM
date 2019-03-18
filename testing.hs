@@ -37,9 +37,9 @@ wrap io = handle (\e -> do
   return Nothing) (fmap Just io)
 
 
-runTestParseThen :: (Eq b, Show a, Show b) => ([Partial] -> Outcome a -> b) -> String -> Lang Char (Gram a)
+runTestParseThen :: (Eq b, Show a, Show b) => Config -> ([Partial] -> Outcome a -> b) -> String -> Lang Char (Gram a)
                     -> (String -> b -> IO Bool, String -> b -> IO Bool)
-runTestParseThen f tag lang = (go False, go True)
+runTestParseThen config f tag lang = (go False, go True)
   where
     go seePartials input expect = do
       () <- if seePartials
@@ -51,9 +51,9 @@ runTestParseThen f tag lang = (go False, go True)
       printCompare tag input actual expect
       where
         actual = f partials outcome
-        (partials,outcome) = doParse lang input
+        (partials,outcome) = doParseConfig config lang input
 
 runTest :: (Show a, Eq a) => String -> Lang Char (Gram a)
         -> (String -> Outcome a -> IO Bool, String -> Outcome a -> IO Bool)
-runTest = runTestParseThen$ \_ o -> o
+runTest = runTestParseThen allowAmb (\_ o -> o)
 

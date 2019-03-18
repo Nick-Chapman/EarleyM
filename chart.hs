@@ -2,7 +2,8 @@
 
 module Chart (NT,Gram,alts,fail,
               Lang,token,declare,produce,fix,
-              Partial,Outcome(..),Pos,doParse)
+              Config,allowAmb,rejectAmb,
+              Partial,Outcome(..),Pos,doParseConfig,doParse)
 where
 
 import Prelude hiding (exp,fail,lex)
@@ -125,6 +126,12 @@ readChan = Pipe.read
 writeChan :: Upto a -> Chan a -> (Chan a, [Item])
 writeChan = Pipe.write
 
+writeChanNoAmb :: Upto a -> Chan a -> Maybe (Chan a, [Item])
+writeChanNoAmb upto chan =
+  if amb then Nothing else Just (Pipe.write upto chan)
+  where
+    amb = or$ do (_,p) <- Pipe.elems chan; return (p == pos)
+    (_,pos) = upto
 
 type State = HMap
 type StateValue a = Map Pos (Chan a)
@@ -162,7 +169,13 @@ fullParseAt start pos s = not (null results)
        Nothing -> error "startChan missing"
                   
 
-data Outcome a = No Pos | Yes a | Amb Int [a] deriving (Show,Eq)
+data Ambiguity = Ambiguity String Pos Pos deriving (Show,Eq)
+
+data Outcome a
+  = No Pos
+  | AmbError Ambiguity
+  | Yes a
+  | Amb Int [a] deriving (Show,Eq)
 
 outcomeOfState :: Pos -> Bool -> NT a -> State -> Outcome a
 outcomeOfState pos stillLooking start s = outcome
@@ -182,58 +195,78 @@ outcomeOfState pos stillLooking start s = outcome
        Just chan -> Pipe.elems chan
        Nothing -> error "startChan missing"
 
+
+data Config = Config { allowAmbiguity :: Bool }
+
+allowAmb :: Config
+allowAmb = Config { allowAmbiguity = True }
+
+rejectAmb :: Config
+rejectAmb = Config { allowAmbiguity = False }
+
 doParse :: (Show t, Show a) => Lang t (Gram a) -> [t] -> ([Partial],Outcome a)
-doParse lang input =
+doParse = doParseConfig allowAmb
+
+          
+doParseConfig :: (Show t, Show a) => Config -> Lang t (Gram a) -> [t] -> ([Partial],Outcome a)
+doParseConfig config lang input =
   withNT "T" $ \token ->
   withNT "S" $ \start ->
   let (gram,rules) = runLang lang (referenceNT token) in
-  go token (start,gram) rules input  
+  go config token (start,gram) rules input  
 
-go :: NT t -> (NT a, Gram a) -> [Rule] -> [t] -> ([Partial], Outcome a)
-go token (start,gram) rules input =
+go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> ([Partial], Outcome a)
+go config token (start,gram) rules input =
   let state0 = insertChan HMap.empty (start,0) Pipe.empty in
   let startItem = Item 0 start 0 gram in
-  let (partials1,state1) = execItemsWithRules rules [startItem] state0 in
-  let (partials2,outcome) = loop 0 state1 input in
-  (partials1 ++ partials2, outcome)
-  where
-    loop pos s [] =
-      ([], outcomeOfState pos stillLooking start s)
-      where
-        stillLooking = existsChan s (token,pos)
-    loop pos s (x:xs) =
-      let from = (token,pos) in
-      case lookChan s from of
-       Nothing ->
-         if fullParseAt start pos s
-         then ([], No (pos+1)) -- previous token completed the parse, but doesn't want more
-         else ([], No pos) -- previous token broke the parse
-       Just chan ->
-         let upto = (x,pos+1) in
-         let partial = Complete from upto in -- TODO: dont bother to add partials for tokens?
-         let (chan',items) = writeChan upto chan in
-         let s2 = insertChan s from chan' in
-         let (partials1,s3) = execItemsWithRules rules items s2 in
-         let (partials2,outcome) = loop (pos+1) s3 xs in
-         (partial : partials1 ++ partials2, outcome)
+  case execItemsWithRules config rules [startItem] state0 of
+  (partials1,Left ambiguity) -> (partials1, AmbError ambiguity)
+  (partials1,Right state1) ->
+    let (partials2,outcome) = loop 0 state1 input in
+    (partials1 ++ partials2, outcome)
+    where
+      loop pos s [] =
+        ([], outcomeOfState pos stillLooking start s)
+        where
+          stillLooking = existsChan s (token,pos)
+      loop pos s (x:xs) =
+        let from = (token,pos) in
+        case lookChan s from of
+         Nothing ->
+           if fullParseAt start pos s
+           then ([], No (pos+1)) -- previous token completed the parse, but doesn't want more
+           else ([], No pos) -- previous token broke the parse
+         Just chan ->
+           let upto = (x,pos+1) in
+           let partial = Complete from upto in -- TODO: dont bother to add partials for tokens?
+           let (chan',items) = writeChan upto chan in
+           let s2 = insertChan s from chan' in
+           case execItemsWithRules config rules items s2 of
+            (partials1,Left ambiguity) -> (partials1,AmbError ambiguity)
+            (partials1,Right s3) ->
+              let (partials2,outcome) = loop (pos+1) s3 xs in
+               (partial : partials1 ++ partials2, outcome)
 
-execItemsWithRules :: [Rule] -> [Item] -> State -> ([Partial],State)
-execItemsWithRules rules items state = execItems items state
+execItemsWithRules :: Config -> [Rule] -> [Item] -> State -> ([Partial],Either Ambiguity State)
+execItemsWithRules config rules items state = execItems items state
   where
+
     findRules :: NT a -> [Rule]
     findRules nt = do
       rule <- rules
       if isRuleKeyedBy nt rule then return rule else []
 
-    execItems :: [Item] -> State -> ([Partial],State)
-    execItems [] s = ([],s)
+    execItems :: [Item] -> State -> ([Partial],Either Ambiguity State)
+    execItems [] s = ([],Right s)
     execItems (Item p1 nt p2 gram : items) s = case gram of
       Alts gs -> execItems ((do g <- gs; return (Item p1 nt p2 g)) ++ items) s
       Ret a ->
-        push partials (execItems (items1 ++ items) s1)
+        case produceState s from upto of
+         Left ambiguity -> (partials,Left ambiguity)
+         Right (s1,items1) ->
+           push partials (execItems (items1 ++ items) s1)
         where
           partials = [Complete from upto]
-          (s1,items1) = produceState s from upto
           from = (nt,p1)
           upto = (a,p2)
       Get ntB fB ->
@@ -245,12 +278,24 @@ execItemsWithRules rules items state = execItems items state
       where
         push ps1 (ps2,s) = (ps1++ps2,s)
 
-    produceState :: State -> From a -> Upto a -> (State, [Item])
+    produceState :: State -> From a -> Upto a -> Either Ambiguity (State, [Item])
     produceState s from upto =
       case lookChan s from of
        Nothing -> error ("produceState, missing channel for: " ++ show from)
-       Just chan -> (insertChan s from chan', items)
-         where (chan',items) = writeChan upto chan
+       Just chan ->
+         if allowAmbiguity config
+         then
+           case writeChan upto chan of
+           (chan',items) ->         
+             Right (insertChan s from chan', items)
+         else
+           case writeChanNoAmb upto chan of
+           Nothing -> Left (Ambiguity (show nt) p1 p2)
+             where (nt,p1) = from
+                   (_,p2) = upto
+           
+           Just (chan',items) ->         
+             Right (insertChan s from chan', items)
 
     awaitState :: State -> From a -> (Upto a -> Item) -> ([Partial], State, [Item])
     awaitState s from reader =

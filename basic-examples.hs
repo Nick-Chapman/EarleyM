@@ -21,6 +21,7 @@ countOutcomes _ o = case o of
   No _ -> 0
   Yes _ -> 1
   Amb n _ -> n
+  AmbError _ -> 0
 
 measureEffort :: [Partial] -> Outcome a -> Int
 measureEffort partials _ = length partials
@@ -173,7 +174,7 @@ tests5 = [
   ]
   where
     tag = "catalan"
-    (run,_runX) = runTestParseThen countOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb countOutcomes tag lang 
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -192,7 +193,7 @@ tests6 = [
   ]
   where
     tag = "zeroG"
-    (run,_runX) = runTestParseThen countOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb countOutcomes tag lang 
     lang = do
       return (do (fail :: Gram Int))
 
@@ -205,7 +206,7 @@ tests7 = [
   ]
   where
     tag = "unitG"
-    (run,_runX) = runTestParseThen countOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb countOutcomes tag lang 
     lang = do
       return (do return ())
 
@@ -222,7 +223,7 @@ tests8 = [ -- LINEAR: 2 + 4n
   ]
   where
     tag = "left-recursion-effort"
-    (run,_runX) = runTestParseThen measureEffort tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureEffort tag lang 
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -242,7 +243,7 @@ tests9 = [ -- STILL QUADRATIC (n^2 + 7n + 2) / 2
   ]
   where
     tag = "right-recursion-effort"
-    (run,_runX) = runTestParseThen measureEffort tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureEffort tag lang 
     lang = do
       tok <- token
       let x = do _ <- tok; return ()

@@ -66,15 +66,15 @@ lang = do
     let application = do (a,_) <- app; return a
     let addition = alts [
           application,
-          do a <- exp; ows; sym '+'; ows; b <- application; return (Add a b)
+          do a <- exp; ows; sym '+'; ows; b <- exp; return (Add a b) -- grammar is ambiguous here
           ]
     return addition
   let start = do ows; e <- lambdarized exp; ows; return e
   return start
 
 
-tests :: [IO Bool]
-tests = [
+tests1 :: [IO Bool]
+tests1 = [
 
   run "a"           "Yes a",
   run "(a)"         "Yes a",
@@ -98,12 +98,12 @@ tests = [
   run "a (b c)"     "Yes (a (b c))",
   
   run "a+b"         "Yes (a+b)",
-  run "a+b+c"       "Yes ((a+b)+c)",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
 
-  run "a + b c d + e"   "Yes ((a+((b c) d))+e)",
-
+  run "a+b+c"       "Amb 2 [(a+(b+c)),((a+b)+c)]",
+  run "a + b c d + e"   "Amb 2 [(a+(((b c) d)+e)),((a+((b c) d))+e)]",
+  run "f(1+2+3)x"   "Amb 2 [((f ((1+2)+3)) x),((f (1+(2+3))) x)]",
 
   -- examples originally copied from parser4v tests
 
@@ -133,7 +133,7 @@ tests = [
   run " 1 + 2 "     "Yes (1+2)",
   run "(1+2)+3"     "Yes ((1+2)+3)",
   run "1+(2+3)"     "Yes (1+(2+3))",
-  run "1+2+3"       "Yes ((1+2)+3)",
+  run "1+2+3"       "Amb 2 [(1+(2+3)),((1+2)+3)]",
 
   run "\\x.x"           "Yes (\\x.x)",
   run " \\ x . x "      "Yes (\\x.x)",
@@ -176,4 +176,31 @@ tests = [
   ]
   where
     tag = "juxta-exp"
-    (run,_runX) = runTestParseThen (\_ o -> show o) tag lang
+    (run,_runX) = runTestParseThen allowAmb (\_ o -> show o) tag lang
+
+
+-- test option to reject ambigious parses, reporting the Ambiguity NT and location
+tests2 :: [IO Bool]
+tests2 = [
+  run "a+b+c "      "AmbError (Ambiguity \"exp\" 0 5)",
+  run "(a+b)+c"     "Yes ((a+b)+c)",
+  run "a+(b+c)"     "Yes (a+(b+c))",
+  
+  run "f(1+2+3)x"   "AmbError (Ambiguity \"exp\" 2 7)",
+  run "f((1+2)+3)x" "Yes ((f ((1+2)+3)) x)",
+  run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)"
+  ]
+  where
+    tag = "juxta-exp"
+    (run,_runX) = runTestParseThen rejectAmb  (\_ o -> show o) tag lang
+
+
+    
+tests :: [IO Bool]
+tests = concat [
+  tests1,
+  tests2,
+  []
+  ]
+
+  
