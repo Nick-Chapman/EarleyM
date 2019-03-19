@@ -3,7 +3,7 @@
 module Chart (NT,Gram,alts,fail,
               Lang,token,declare,produce,fix,
               Config,allowAmb,rejectAmb,
-              Partial,Outcome(..),Pos,doParseConfig,doParse)
+              Parsing(..),Eff(..),Partial,Outcome(..),Pos,doParseConfig,doParse)
 where
 
 import Prelude hiding (exp,fail,lex)
@@ -204,51 +204,61 @@ allowAmb = Config { allowAmbiguity = True }
 rejectAmb :: Config
 rejectAmb = Config { allowAmbiguity = False }
 
-doParse :: (Show t, Show a) => Lang t (Gram a) -> [t] -> ([Partial],Outcome a)
+
+newtype Eff = Eff Int deriving Show
+incEff :: Eff -> Eff
+incEff (Eff x) = Eff (x+1)
+
+data Parsing a = Parsing { effort :: Eff, partials :: [Partial], outcome :: Outcome a }
+
+doParse :: (Show t, Show a) => Lang t (Gram a) -> [t] -> Parsing a
 doParse = doParseConfig allowAmb
 
           
-doParseConfig :: (Show t, Show a) => Config -> Lang t (Gram a) -> [t] -> ([Partial],Outcome a)
+doParseConfig :: (Show t, Show a) => Config -> Lang t (Gram a) -> [t] -> Parsing a
 doParseConfig config lang input =
   withNT "T" $ \token ->
   withNT "S" $ \start ->
   let (gram,rules) = runLang lang (referenceNT token) in
   go config token (start,gram) rules input  
 
-go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> ([Partial], Outcome a)
+go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> Parsing a
 go config token (start,gram) rules input =
   let state0 = insertChan HMap.empty (start,0) Pipe.empty in
   let startItem = Item 0 start 0 gram in
-  case execItemsWithRules config rules [startItem] state0 of
-  (partials1,Left ambiguity) -> (partials1, AmbError ambiguity)
-  (partials1,Right state1) ->
-    let (partials2,outcome) = loop 0 state1 input in
-    (partials1 ++ partials2, outcome)
-    where
-      loop pos s [] =
-        ([], outcomeOfState pos stillLooking start s)
-        where
-          stillLooking = existsChan s (token,pos)
-      loop pos s (x:xs) =
-        let from = (token,pos) in
-        case lookChan s from of
-         Nothing ->
-           if fullParseAt start pos s
-           then ([], No (pos+1)) -- previous token completed the parse, but doesn't want more
-           else ([], No pos) -- previous token broke the parse
-         Just chan ->
-           let upto = (x,pos+1) in
-           let partial = Complete from upto in -- TODO: dont bother to add partials for tokens?
-           let (chan',items) = writeChan upto chan in
-           let s2 = insertChan s from chan' in
-           case execItemsWithRules config rules items s2 of
-            (partials1,Left ambiguity) -> (partials1,AmbError ambiguity)
-            (partials1,Right s3) ->
-              let (partials2,outcome) = loop (pos+1) s3 xs in
-               (partial : partials1 ++ partials2, outcome)
+  let eff0 = Eff 0 in
+  case execItemsWithRules config rules eff0 [startItem] state0 of
+  (eff,partials1,Left ambiguity) -> Parsing eff partials1 (AmbError ambiguity)
+  (eff,partials1,Right state1) ->
+    let (eff1,partials2,outcome) = loop config token start rules eff 0 state1 input in
+    Parsing eff1 (partials1 ++ partials2) outcome
 
-execItemsWithRules :: Config -> [Rule] -> [Item] -> State -> ([Partial],Either Ambiguity State)
-execItemsWithRules config rules items state = execItems items state
+loop :: Config -> NT t -> NT a -> [Rule] -> Eff -> Pos -> State -> [t] -> (Eff,[Partial],Outcome a)
+loop _ token start _ eff pos s [] =
+  (eff, [], outcomeOfState pos stillLooking start s)
+  where
+    stillLooking = existsChan s (token,pos)
+loop config token start rules eff pos s (x:xs) =
+  let from = (token,pos) in
+  case lookChan s from of
+   Nothing ->
+     if fullParseAt start pos s
+     then (eff, [], No (pos+1)) -- previous token completed the parse, but doesn't want more
+     else (eff, [], No pos) -- previous token broke the parse
+   Just chan ->
+     let upto = (x,pos+1) in
+     let partial = Complete from upto in -- TODO: dont bother to add partials for tokens?
+     let (chan',items) = writeChan upto chan in
+     let s2 = insertChan s from chan' in
+     case execItemsWithRules config rules eff items s2 of
+      (eff1,partials1,Left ambiguity) -> (eff1,partials1,AmbError ambiguity)
+      (eff1,partials1,Right s3) ->
+        let (eff2,partials2,outcome) = loop config token start rules eff1 (pos+1) s3 xs in
+         (eff2, partial : partials1 ++ partials2, outcome)
+
+
+execItemsWithRules :: Config -> [Rule] -> Eff -> [Item] -> State -> (Eff,[Partial],Either Ambiguity State)
+execItemsWithRules config rules eff items state = execItems eff items state
   where
 
     findRules :: NT a -> [Rule]
@@ -256,27 +266,27 @@ execItemsWithRules config rules items state = execItems items state
       rule <- rules
       if isRuleKeyedBy nt rule then return rule else []
 
-    execItems :: [Item] -> State -> ([Partial],Either Ambiguity State)
-    execItems [] s = ([],Right s)
-    execItems (Item p1 nt p2 gram : items) s = case gram of
-      Alts gs -> execItems ((do g <- gs; return (Item p1 nt p2 g)) ++ items) s
+    execItems :: Eff -> [Item] -> State -> (Eff,[Partial],Either Ambiguity State)
+    execItems eff [] s = (eff,[],Right s)
+    execItems eff (Item p1 nt p2 gram : items) s = case gram of
+      Alts gs -> execItems eff ((do g <- gs; return (Item p1 nt p2 g)) ++ items) s
       Ret a ->
         case produceState s from upto of
-         Left ambiguity -> (partials,Left ambiguity)
+         Left ambiguity -> (eff,partials,Left ambiguity)
          Right (s1,items1) ->
-           push partials (execItems (items1 ++ items) s1)
+           push partials (execItems (incEff eff) (items1 ++ items) s1)
         where
           partials = [Complete from upto]
           from = (nt,p1)
           upto = (a,p2)
       Get ntB fB ->
-        push partials (execItems (items1 ++ items) s1)
+        push partials (execItems (incEff eff) (items1 ++ items) s1)
         where
           (partials,s1,items1) = awaitState s from reader 
           from = (ntB,p2)
           reader (b,p3) = (Item p1 nt p3 (fB b))
       where
-        push ps1 (ps2,s) = (ps1++ps2,s)
+        push ps1 (eff,ps2,s) = (eff,ps1++ps2,s)
 
     produceState :: State -> From a -> Upto a -> Either Ambiguity (State, [Item])
     produceState s from upto =

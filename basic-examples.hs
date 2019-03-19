@@ -16,15 +16,21 @@ digitTok tok =
 symTok :: Eq t => Gram t -> t -> Gram ()
 symTok tok x = do c <- tok; if c == x then return () else fail
 
-countOutcomes :: [Partial] -> Outcome a -> Int
-countOutcomes _ o = case o of
+countOutcomes :: Outcome a -> Int
+countOutcomes  o = case o of
   No _ -> 0
   Yes _ -> 1
   Amb n _ -> n
   AmbError _ -> 0
 
-measureEffort :: [Partial] -> Outcome a -> Int
-measureEffort partials _ = length partials
+measureOutcomes :: Parsing a -> Int
+measureOutcomes (Parsing _ _ o) = countOutcomes o
+
+measureEffort :: Parsing a -> Int
+measureEffort (Parsing (Eff e) _ _) = e
+
+measureEffortAndAmbiguity :: Parsing a -> (Int,Int)
+measureEffortAndAmbiguity (Parsing (Eff e) _ o) = (e, countOutcomes o)
 
                            
 tests1 :: [IO Bool]
@@ -174,7 +180,7 @@ tests5 = [
   ]
   where
     tag = "catalan"
-    (run,_runX) = runTestParseThen allowAmb countOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureOutcomes tag lang 
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -193,7 +199,7 @@ tests6 = [
   ]
   where
     tag = "zeroG"
-    (run,_runX) = runTestParseThen allowAmb countOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureOutcomes tag lang 
     lang = do
       return (do (fail :: Gram Int))
 
@@ -206,51 +212,127 @@ tests7 = [
   ]
   where
     tag = "unitG"
-    (run,_runX) = runTestParseThen allowAmb countOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureOutcomes tag lang 
     lang = do
       return (do return ())
 
 
--- effort...
+-- check effort for left/right recursions
 
 tests8 :: [IO Bool]
-tests8 = [ -- LINEAR: 2 + 4n
-  run "" 2,
-  run "a" 6,
-  run "ab" 10,
-  run "abc" 14,
-  run "abcd" 18
+tests8 = [ 
+  run "" 4,
+  run "a" 8, -- +4..
+  run "ab" 12,
+  run "abc" 16,
+  run "abcd" 20
   ]
   where
-    tag = "left-recursion-effort"
+    tag = "left-recursion"
+    -- LINEAR
     (run,_runX) = runTestParseThen allowAmb measureEffort tag lang 
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
-      fix"L" $ \xs -> return $ alts [
-        x,
-        do xs; x -- Left Recursion
-        ]
+      fix"L" $ \xs -> return $ alts [x, do xs; x]
 
 
 tests9 :: [IO Bool]
-tests9 = [ -- STILL QUADRATIC (n^2 + 7n + 2) / 2
-  run "" 1,
-  run "a" 5,
-  run "ab" 10,
-  run "abc" 16,
-  run "abcd" 23
+tests9 = [ 
+  run "" 2,
+  run "a" 6, -- +4,5,6,7..
+  run "ab" 11,
+  run "abc" 17,
+  run "abcd" 24
   ]
   where
-    tag = "right-recursion-effort"
-    (run,_runX) = runTestParseThen allowAmb measureEffort tag lang 
+    tag = "right-recursion"
+    -- QUADRATIC -- expected.
+    (run,_run) = runTestParseThen allowAmb measureEffort tag lang 
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
-      fix"R" $ \xs -> return $ alts [
-        x,
-        do x; xs -- Right Recursion
-        ]
+      fix"R" $ \xs -> return $ alts [x, do x; xs]
+
+
+tests10 :: [IO Bool]
+tests10 = [ 
+  run "." 6,
+  run "a." 10, -- +4..
+  run "ab." 14,
+  run "abc." 18,
+  run "abcd." 22
+  ]
+  where
+    tag = "right-recursion-marked-termination"
+    -- LINEAR
+    (run,_run) = runTestParseThen allowAmb measureEffort tag lang 
+    lang = do
+      tok <- token
+      let mark = do c <- tok; if c=='.' then return () else fail
+      let x = do _ <- tok; return ()
+      fix"R" $ \xs -> return $ alts [mark, do x; xs]
+
+
+tests11 :: [IO Bool]
+tests11 = [
+  run "a" 3,
+  run "ab" 5, -- +2..
+  run "abc" 7,
+  run "abcd" 9
+  ]
+  where
+    tag = "unfolding-right-recursion"
+    -- LINEAR -- Even when we measure the internal steps. Still kind of suprised.
+    (run,_run) = runTestParseThen allowAmb measureEffort tag lang
+    many p = alts [return [], do x <- p; xs <- many p; return (x : xs)]
+    lang = do
+      tok <- token
+      let x = do _ <- tok; return ()
+      return$ do
+        x; _ <- many x; return ()
+
+
+tests12 :: [IO Bool]
+tests12 = [
+
+  -- LINEAR in the length of the input 
+  run "1;2" (24,1),
+  run "12;34" (36,1), -- +12..
+  run "123;456" (48,1),
+  run "1234;5678" (60,1),
+  
+  -- where the semi colons are seems not to matter (or to matter only linearly)
+  run "1;2345678" (72,1),
+  run "12;345678" (68,1), -- -2..
+  run "123;45678" (64,1),
+  run "1234;5678" (60,1),
+
+  -- LINEAR in the amount of ambiguity (when semicolon added at the start)
+  run "12345678" (36,0),
+  run "1;2345678" (72,1), -- +36..
+  run "1;2;345678" (108,2),
+  run "1;2;3;45678" (144,3),
+  run "1;2;3;4;5678" (180,4),
+
+  -- but QUADRATIC when semicolons are added at the back
+  run "12345678" (36,0),
+  run "1234567;8" (48,1), -- +12,20,28..
+  run "123456;7;8" (68,2),
+  run "12345;6;7;8" (96,3),
+  
+  run "" (4,0)
+  ]
+  where
+    tag = "ambiguous-list-splits"
+    (run,_run) = runTestParseThen allowAmb measureEffortAndAmbiguity tag lang
+    lang = do
+      tok <- token
+      let x = do _ <- tok; return ()
+      xs <- fix"L" $ \xs -> return $ alts [x, do xs; x]
+      let semi = do c <- tok; if c==';' then return () else fail
+      return$ do
+        xs; semi; xs
 
 
 tests :: [IO Bool]
@@ -259,7 +341,8 @@ tests = concat [
   tests3, tests4,
   tests5,
   tests6, tests7,
-  tests8, tests9,
+  tests8, tests9, tests10, tests11,
+  tests12,
   []
   ]
 

@@ -37,7 +37,7 @@ wrap io = handle (\e -> do
   return Nothing) (fmap Just io)
 
 
-runTestParseThen :: (Eq b, Show a, Show b) => Config -> ([Partial] -> Outcome a -> b) -> String -> Lang Char (Gram a)
+runTestParseThen :: (Eq b, Show a, Show b) => Config -> (Parsing a -> b) -> String -> Lang Char (Gram a)
                     -> (String -> b -> IO Bool, String -> b -> IO Bool)
 runTestParseThen config f tag lang = (go False, go True)
   where
@@ -46,14 +46,16 @@ runTestParseThen config f tag lang = (go False, go True)
             then do
               putStrLn ("Running (" ++ tag ++ ") " ++ show input)
               _ <- sequence (map print partials)
-              putStrLn ("Outcome = " ++ show actual)
+              putStrLn ("Effort = " ++ show effort)
+              putStrLn ("Outcome = " ++ show outcome)
             else return ()
       printCompare tag input actual expect
       where
-        actual = f partials outcome
-        (partials,outcome) = doParseConfig config lang input
+        Parsing effort partials outcome = parsing
+        actual = f parsing
+        parsing = doParseConfig config lang input
 
 runTest :: (Show a, Eq a) => String -> Lang Char (Gram a)
         -> (String -> Outcome a -> IO Bool, String -> Outcome a -> IO Bool)
-runTest = runTestParseThen allowAmb (\_ o -> o)
+runTest = runTestParseThen allowAmb (\(Parsing _ _ o) -> o)
 

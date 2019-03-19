@@ -162,6 +162,8 @@ tests1 = [
   run "(\\f.\\x.f(f x))(\\x.x+1)5"                       "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
   run " ( \\ f . \\ x . f ( f x ) ) ( \\ x . x + 1 ) 5 " "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
 
+  run "f quitelong 3" "Yes ((f quitelong) 3)",
+  
   run " "   "No 2",
   run "#"   "No 1",
   run ")"   "No 1",
@@ -176,7 +178,7 @@ tests1 = [
   ]
   where
     tag = "juxta-exp"
-    (run,_runX) = runTestParseThen allowAmb (\_ o -> show o) tag lang
+    (run,_runX) = runTestParseThen allowAmb (\(Parsing _ _ o) -> show o) tag lang
 
 
 -- test option to reject ambigious parses, reporting the Ambiguity NT and location
@@ -191,8 +193,8 @@ tests2 = [
   run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)"
   ]
   where
-    tag = "juxta-exp"
-    (run,_runX) = runTestParseThen rejectAmb  (\_ o -> show o) tag lang
+    tag = "juxta-exp-no-amb"
+    (run,_runX) = runTestParseThen rejectAmb (\(Parsing _ _ o) -> show o) tag lang
 
 
     
