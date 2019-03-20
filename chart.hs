@@ -15,17 +15,22 @@ import Data.HMap(HKey,HMap)
 import qualified Pipe
 import Pipe(Pipe)
 
+data NtName = NtName String | Start | Terminal deriving Eq
+instance Show NtName where
+  show (NtName s) = s
+  show Start = "<start>"
+  show Terminal = "<terminal>"
 
-data NT a = forall x. NT String (a -> String) (HKey x (StateValue a))
+data NT a = forall x. NT NtName (a -> String) (HKey x (StateValue a))
 
-withNT :: Show a => String -> (NT a -> b) -> b
+withNT :: Show a => NtName -> (NT a -> b) -> b
 withNT name k = HMap.withKey $ \key -> k (NT name show key)
 
 withKeyOfNT :: NT a -> (forall x. HKey x (StateValue a) -> b) -> b
 withKeyOfNT (NT _ _ key) k = k key
 
 instance Show (NT a) where
-  show (NT name _ _) = name
+  show (NT name _ _) = show name
 
 
 data Gram a = Alts [Gram a] | Ret a | forall b. Get (NT b) (b -> Gram a)
@@ -75,7 +80,7 @@ token :: Lang t (Gram t)
 token = Lang$ \t -> (t,[])
 
 createNamedNT :: Show a => String -> Lang t (NT a)
-createNamedNT name = Lang$ \_ -> withNT name $ \nt -> (nt,[])
+createNamedNT name = Lang$ \_ -> withNT (NtName name) $ \nt -> (nt,[])
 
 produce :: NT a -> Gram a -> Lang t ()
 produce nt gram = Lang$ \_ -> ((),[Rule nt gram])
@@ -103,9 +108,9 @@ data Partial
 
 instance Show Partial where
   show (Predict (NT name _ _,pos1)) =
-    "? " ++ name ++ "/" ++ show pos1
+    "? " ++ show name ++ "/" ++ show pos1
   show (Complete (NT name aShow _,pos1) (a,pos2)) =
-    "! " ++ name ++ "/" ++ show pos1 ++ " --> " ++ show pos2 ++ " : " ++ aShow a
+    "! " ++ show name ++ "/" ++ show pos1 ++ " --> " ++ show pos2 ++ " : " ++ aShow a
 
 
 data Item -- An Earley item: A located/dotted Rule. i.e. Rule + 2 positions
@@ -184,7 +189,7 @@ outcomeOfState pos stillLooking start s = outcome
       [] ->
         if stillLooking
         then No (pos+1) -- run out of tokens
-        else No pos -- final token broke the parse
+        else No pos-- final token broke the parse
       [x] -> Yes x
       xs -> Amb (length xs) xs
     results = do
@@ -217,8 +222,8 @@ doParse = doParseConfig allowAmb
           
 doParseConfig :: (Show t, Show a) => Config -> Lang t (Gram a) -> [t] -> Parsing a
 doParseConfig config lang input =
-  withNT "T" $ \token ->
-  withNT "S" $ \start ->
+  withNT Terminal $ \token ->
+  withNT Start $ \start ->
   let (gram,rules) = runLang lang (referenceNT token) in
   go config token (start,gram) rules input  
 
@@ -232,6 +237,7 @@ go config token (start,gram) rules input =
   (eff,partials1,Right state1) ->
     let (eff1,partials2,outcome) = loop config token start rules eff 0 state1 input in
     Parsing eff1 (partials1 ++ partials2) outcome
+
 
 loop :: Config -> NT t -> NT a -> [Rule] -> Eff -> Pos -> State -> [t] -> (Eff,[Partial],Outcome a)
 loop _ token start _ eff pos s [] =
