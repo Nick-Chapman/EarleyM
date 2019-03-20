@@ -174,6 +174,30 @@ tests1 = [
   run "4x"  "No 2",
   run "42x" "No 3",
 
+  run "foo arg (\\x.42) + 10" "Yes (((foo arg) (\\x.42))+10)",
+  
+  run "@foo arg (\\x.42) + 10" "No 1",
+  run "f@oo arg (\\x.42) + 10" "No 2",
+  run "fo@o arg (\\x.42) + 10" "No 3",
+  run "foo@ arg (\\x.42) + 10" "No 4",
+  run "foo @arg (\\x.42) + 10" "No 5",
+  run "foo a@rg (\\x.42) + 10" "No 6",
+  run "foo ar@g (\\x.42) + 10" "No 7",
+  run "foo arg@ (\\x.42) + 10" "No 8",
+  run "foo arg @(\\x.42) + 10" "No 9",
+  run "foo arg (@\\x.42) + 10" "No 10",
+  run "foo arg (\\@x.42) + 10" "No 11",
+  run "foo arg (\\x@.42) + 10" "No 12",
+  run "foo arg (\\x.@42) + 10" "No 13",
+  run "foo arg (\\x.4@2) + 10" "No 14",
+  run "foo arg (\\x.42@) + 10" "No 15",
+  run "foo arg (\\x.42)@ + 10" "No 16",
+  run "foo arg (\\x.42) @+ 10" "No 17",
+  run "foo arg (\\x.42) +@ 10" "No 18",
+  run "foo arg (\\x.42) + @10" "No 19",
+  run "foo arg (\\x.42) + 1@0" "No 20",
+  run "foo arg (\\x.42) + 10@" "No 21",
+
   run ""    "No 1"
   ]
   where
