@@ -76,6 +76,7 @@ instance Monad (Lang t) where
     let (b,ps2) = runLang (f a) t in
     (b,ps1++ps2)
 
+
 token :: Lang t (Gram t)
 token = Lang$ \t -> (t,[])
 
@@ -104,11 +105,14 @@ type Upto a = (a, Pos)
 
 data Partial
   = forall a. Predict (From a)
+  | forall a b. Dot (From a) (NT b)
   | forall a. Complete (From a) (Upto a)
 
 instance Show Partial where
   show (Predict (NT name _ _,pos1)) =
     "? " ++ show name ++ "/" ++ show pos1
+  show (Dot (NT name _ _,pos1) (NT name2 _ _)) =
+    "? " ++ show name ++ "/" ++ show pos1 ++ " --> ?? " ++ show name2 ++ " ??"
   show (Complete (NT name aShow _,pos1) (a,pos2)) =
     "! " ++ show name ++ "/" ++ show pos1 ++ " --> " ++ show pos2 ++ " : " ++ aShow a
 
@@ -138,29 +142,29 @@ writeChanNoAmb upto chan =
     amb = or$ do (_,p) <- Pipe.elems chan; return (p == pos)
     (_,pos) = upto
 
-type State = HMap
+data State = State { chans :: HMap }
 type StateValue a = Map Pos (Chan a)
 
 existsChan :: State -> From a -> Bool
 existsChan s (nt,pos) =
   withKeyOfNT nt $ \key ->
-  case HMap.lookup key s of
+  case HMap.lookup key (chans s) of
    Nothing -> False
    Just m -> Map.member pos m
 
 lookChan :: State -> From a -> Maybe (Chan a)
 lookChan s (nt,pos) =
   withKeyOfNT nt $ \key ->
-  case HMap.lookup key s of
+  case HMap.lookup key (chans s) of
    Nothing -> Nothing
    Just m -> Map.lookup pos m
 
 insertChan :: State -> From a -> Chan a -> State
 insertChan s (nt,pos) chan =
   withKeyOfNT nt $ \key ->
-  let m = HMap.findWithDefault Map.empty key s in
+  let m = HMap.findWithDefault Map.empty key (chans s) in
   let m' = Map.insert pos chan m in
-  HMap.insert key m' s
+  s { chans = HMap.insert key m' (chans s) }
 
 fullParseAt :: NT a -> Pos -> State -> Bool
 fullParseAt start pos s = not (null results)
@@ -229,7 +233,8 @@ doParseConfig config lang input =
 
 go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> Parsing a
 go config token (start,gram) rules input =
-  let state0 = insertChan HMap.empty (start,0) Pipe.empty in
+  let initState = State { chans = HMap.empty } in
+  let state0 = insertChan initState (start,0) Pipe.empty in
   let startItem = Item 0 start 0 gram in
   let eff0 = Eff 0 in
   case execItemsWithRules config rules eff0 [startItem] state0 of
@@ -263,7 +268,7 @@ loop config token start rules eff pos s (x:xs) =
          (eff2, partial : partials1 ++ partials2, outcome)
 
 
-execItemsWithRules :: Config -> [Rule] -> Eff -> [Item] -> State -> (Eff,[Partial],Either Ambiguity State)
+execItemsWithRules :: Config -> [Rule] -> Eff -> [Item] -> State -> (Eff,[Partial],Either Ambiguity (State))
 execItemsWithRules config rules eff items state = execItems eff items state
   where
 
@@ -272,7 +277,7 @@ execItemsWithRules config rules eff items state = execItems eff items state
       rule <- rules
       if isRuleKeyedBy nt rule then return rule else []
 
-    execItems :: Eff -> [Item] -> State -> (Eff,[Partial],Either Ambiguity State)
+    execItems :: Eff -> [Item] -> State -> (Eff,[Partial],Either Ambiguity (State))
     execItems eff [] s = (eff,[],Right s)
     execItems eff (Item p1 nt p2 gram : items) s = case gram of
       Alts gs -> execItems eff ((do g <- gs; return (Item p1 nt p2 g)) ++ items) s
@@ -286,13 +291,16 @@ execItemsWithRules config rules eff items state = execItems eff items state
           from = (nt,p1)
           upto = (a,p2)
       Get ntB fB ->
-        push partials (execItems (incEff eff) (items1 ++ items) s1)
+        push (partials0 ++ partials1) (execItems (incEff eff) (items1 ++ items) s1)
         where
-          (partials,s1,items1) = awaitState s from reader 
+          partials0 = [Dot (nt,p1) ntB]
+          (partials1,s1,items1) = awaitState s from reader 
           from = (ntB,p2)
           reader (b,p3) = (Item p1 nt p3 (fB b))
+
       where
         push ps1 (eff,ps2,s) = (eff,ps1++ps2,s)
+
 
     produceState :: State -> From a -> Upto a -> Either Ambiguity (State, [Item])
     produceState s from upto =
