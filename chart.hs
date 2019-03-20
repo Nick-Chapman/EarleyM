@@ -3,7 +3,7 @@
 module Chart (NT,Gram,alts,fail,
               Lang,token,declare,produce,fix,
               Config,allowAmb,rejectAmb,
-              Parsing(..),Eff(..),Partial,Outcome(..),Pos,doParseConfig,doParse)
+              Parsing(..),Eff(..),Partial,Outcome(..),Ambiguity(..),Pos,doParseConfig,doParse)
 where
 
 import Prelude hiding (exp,fail,lex)
@@ -178,9 +178,9 @@ data Ambiguity = Ambiguity String Pos Pos deriving (Show,Eq)
 
 data Outcome a
   = No Pos
-  | AmbError Ambiguity
+  | Ambiguous Ambiguity -- when: rejectAmb
   | Yes a
-  | Amb Int [a] deriving (Show,Eq)
+  | Multiple Int [a] deriving (Show,Eq) -- when: allowAmb
 
 outcomeOfState :: Pos -> Bool -> NT a -> State -> Outcome a
 outcomeOfState pos stillLooking start s = outcome
@@ -191,7 +191,7 @@ outcomeOfState pos stillLooking start s = outcome
         then No (pos+1) -- run out of tokens
         else No pos-- final token broke the parse
       [x] -> Yes x
-      xs -> Amb (length xs) xs
+      xs -> Multiple (length xs) xs
     results = do
       (a,p) <- elems
       if p == pos then [a] else []
@@ -233,7 +233,7 @@ go config token (start,gram) rules input =
   let startItem = Item 0 start 0 gram in
   let eff0 = Eff 0 in
   case execItemsWithRules config rules eff0 [startItem] state0 of
-  (eff,partials1,Left ambiguity) -> Parsing eff partials1 (AmbError ambiguity)
+  (eff,partials1,Left ambiguity) -> Parsing eff partials1 (Ambiguous ambiguity)
   (eff,partials1,Right state1) ->
     let (eff1,partials2,outcome) = loop config token start rules eff 0 state1 input in
     Parsing eff1 (partials1 ++ partials2) outcome
@@ -257,7 +257,7 @@ loop config token start rules eff pos s (x:xs) =
      let (chan',items) = writeChan upto chan in
      let s2 = insertChan s from chan' in
      case execItemsWithRules config rules eff items s2 of
-      (eff1,partials1,Left ambiguity) -> (eff1,partials1,AmbError ambiguity)
+      (eff1,partials1,Left ambiguity) -> (eff1,partials1,Ambiguous ambiguity)
       (eff1,partials1,Right s3) ->
         let (eff2,partials2,outcome) = loop config token start rules eff1 (pos+1) s3 xs in
          (eff2, partial : partials1 ++ partials2, outcome)

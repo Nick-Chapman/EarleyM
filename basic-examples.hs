@@ -16,21 +16,21 @@ digitTok tok =
 symTok :: Eq t => Gram t -> t -> Gram ()
 symTok tok x = do c <- tok; if c == x then return () else fail
 
-countOutcomes :: Outcome a -> Int
-countOutcomes  o = case o of
+countAmbiguity :: Outcome a -> Int
+countAmbiguity  o = case o of
   No _ -> 0
+  Ambiguous _ -> 0
   Yes _ -> 1
-  Amb n _ -> n
-  AmbError _ -> 0
+  Multiple n _ -> n
 
-measureOutcomes :: Parsing a -> Int
-measureOutcomes (Parsing _ _ o) = countOutcomes o
+measureAmbiguity :: Parsing a -> Int
+measureAmbiguity (Parsing _ _ o) = countAmbiguity o
 
 measureEffort :: Parsing a -> Int
 measureEffort (Parsing (Eff e) _ _) = e
 
 measureEffortAndAmbiguity :: Parsing a -> (Int,Int)
-measureEffortAndAmbiguity (Parsing (Eff e) _ o) = (e, countOutcomes o)
+measureEffortAndAmbiguity (Parsing (Eff e) _ o) = (e, countAmbiguity o)
 
                            
 tests1 :: [IO Bool]
@@ -91,7 +91,7 @@ tests3 = [
   run "(5)" (Yes (Leaf 5)),
   run "((5))" (Yes (Leaf 5)),
   run "5+6" (Yes (Add (Leaf 5) (Leaf 6))),
-  run "5+6+7" (Amb 2 [Add (Leaf 5) (Add (Leaf 6) (Leaf 7)), Add (Add (Leaf 5) (Leaf 6)) (Leaf 7)]),
+  run "5+6+7" (Ambiguous (Ambiguity "E" 0 5)),
   run "(5+6)+7" (Yes (Add (Add (Leaf 5) (Leaf 6)) (Leaf 7))),
   run "5+(6+7)" (Yes (Add (Leaf 5) (Add (Leaf 6) (Leaf 7)))),
   run "xy" (No 1),
@@ -122,29 +122,20 @@ tests3 = [
 
 tests4 :: [IO Bool]
 tests4 = [
-  run "5" (Yes (Leaf 5)),
-  run "(5)" (Yes (Leaf 5)),
-  run "((5))" (Yes (Leaf 5)),
-  run "5+6" (Yes (Add (Leaf 5) (Leaf 6))),
-  run "5+6+7" (Amb 2 [Add (Leaf 5) (Add (Leaf 6) (Leaf 7)),Add (Add (Leaf 5) (Leaf 6)) (Leaf 7)]),
-  run "(5+6)+7" (Yes (Add (Add (Leaf 5) (Leaf 6)) (Leaf 7))),
-  run "5+(6+7)" (Yes (Add (Leaf 5) (Add (Leaf 6) (Leaf 7)))),
-  run "5" (Yes (Leaf 5)),
   run "51" (Yes (Leaf 51)),
-  run "(5)" (Yes (Leaf 5)),
   run "(51)" (Yes (Leaf 51)),
   run "51+61" (Yes (Add (Leaf 51) (Leaf 61))),
-  run "51+61+71" (Amb 2 [Add (Leaf 51) (Add (Leaf 61) (Leaf 71)),Add (Add (Leaf 51) (Leaf 61)) (Leaf 71)]),
+  run "51+61+71" (Ambiguous (Ambiguity "E" 0 7)),
   run "(51+61)+71" (Yes (Add (Add (Leaf 51) (Leaf 61)) (Leaf 71))),
   run "51+(61+71)" (Yes (Add (Leaf 51) (Add (Leaf 61) (Leaf 71)))),
   run "xy" (No 1),
   run "(xy" (No 2),
-  run "(5" (No 3),
+  run "(51" (No 4),
   run ")x" (No 1),
-  run "+5" (No 1),
-  run "5+" (No 3),
-  run "5++6" (No 3),
-  run "5)x" (No 2),
+  run "+51" (No 1),
+  run "51+" (No 4),
+  run "51++61" (No 4),
+  run "51)x" (No 3),
   run "" (No 1)
   ]
   where
@@ -180,15 +171,16 @@ tests5 = [
   ]
   where
     tag = "catalan"
-    (run,_runX) = runTestParseThen allowAmb measureOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureAmbiguity tag lang 
+    seq g1 g2 = do x1 <- g1; x2 <- g2; return$ "("++x1++x2++")"
     lang = do
       tok <- token
-      let x = do _ <- tok; return ()
-      fix"cat" $ \u -> return $ alts [
-        do x; x,
-        do x; u,
-        do u; x,
-        do u; u
+      let x = do c <- tok; return [c]
+      fix"cat" $ \c -> return $ alts [
+        seq x x,
+        seq x c,
+        seq c x,
+        seq c c
         ]
 
 tests6 :: [IO Bool]
@@ -199,7 +191,7 @@ tests6 = [
   ]
   where
     tag = "zeroG"
-    (run,_runX) = runTestParseThen allowAmb measureOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureAmbiguity tag lang 
     lang = do
       return (do (fail :: Gram Int))
 
@@ -212,7 +204,7 @@ tests7 = [
   ]
   where
     tag = "unitG"
-    (run,_runX) = runTestParseThen allowAmb measureOutcomes tag lang 
+    (run,_runX) = runTestParseThen allowAmb measureAmbiguity tag lang 
     lang = do
       return (do return ())
 
@@ -335,6 +327,70 @@ tests12 = [
         xs; semi; xs
 
 
+
+tests13 :: [IO Bool]
+tests13 = [
+  check "",
+  check "a",
+  check "ab",
+  check "abc",
+  check "abcd"
+  ]
+  where
+    tag = "everything"
+    check input = run input (Yes input)
+    (run,_run) = runTest tag lang 
+    lang :: Lang Char (Gram String)
+    lang = do
+      tok <- token
+      fix"L" $ \list -> return $ alts [
+        do xs <- list; x <- tok; return (xs++[x]),
+        return []
+        ]
+
+tests14 :: [IO Bool]
+tests14 = [
+  check "",
+  check "a",
+  check "ab",
+  check "abc",
+  check "abcd"
+  ]
+  where
+    tag = "everything/read-pipe-existing-elems"
+    check input = run input (Yes input)
+    (run,_run) = runTest tag lang 
+    lang :: Lang Char (Gram String)
+    lang = do
+      tok <- token
+      fix"L" $ \list -> return $ alts [-- 2 alts reversed
+        return [],
+        do xs <- list; x <- tok; return (xs++[x])
+        ]
+
+
+tests15 :: [IO Bool]
+tests15 = [
+  check "a" 2,
+  check "ab" 4,
+  check "abc" 8,
+  check "abcd" 16
+  ]
+  where
+    tag = "everything/exponentially-repeated"
+    check input n = run input (Multiple n (take n (repeat input)))
+    (run,_run) = runTestAllowAmb tag lang 
+    lang :: Lang Char (Gram String)
+    lang = do
+      tok <- token
+      fix"L" $ \list -> return $ alts [
+        do xs <- list; x <- tok; return (xs++[x]),
+        return [],
+        do xs <- list; x <- tok; return (xs++[x])
+        ]
+
+
+
 tests :: [IO Bool]
 tests = concat [
   tests1, tests2,
@@ -343,6 +399,7 @@ tests = concat [
   tests6, tests7,
   tests8, tests9, tests10, tests11,
   tests12,
+  tests13, tests14, tests15,
   []
   ]
 

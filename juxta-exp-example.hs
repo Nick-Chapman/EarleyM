@@ -98,13 +98,19 @@ tests1 = [
   run "a (b c)"     "Yes (a (b c))",
   
   run "a+b"         "Yes (a+b)",
+  run " a + b "     "Yes (a+b)",
+
+  run "a+b+c "      "Ambiguous (Ambiguity \"exp\" 0 5)",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
+  
+  run "f(1+2+3)x"   "Ambiguous (Ambiguity \"exp\" 2 7)",
+  run "f((1+2)+3)x" "Yes ((f ((1+2)+3)) x)",
+  run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)",
 
-  run "a+b+c"       "Amb 2 [(a+(b+c)),((a+b)+c)]",
-  run "a + b c d + e"   "Amb 2 [(a+(((b c) d)+e)),((a+((b c) d))+e)]",
-  run "f(1+2+3)x"   "Amb 2 [((f ((1+2)+3)) x),((f (1+(2+3))) x)]",
+  run "f(1+2+3+4)x" "Ambiguous (Ambiguity \"exp\" 2 7)",
 
+  
   -- examples originally copied from parser4v tests
 
   run "4"           "Yes 4",
@@ -133,7 +139,6 @@ tests1 = [
   run " 1 + 2 "     "Yes (1+2)",
   run "(1+2)+3"     "Yes ((1+2)+3)",
   run "1+(2+3)"     "Yes (1+(2+3))",
-  run "1+2+3"       "Amb 2 [(1+(2+3)),((1+2)+3)]",
 
   run "\\x.x"           "Yes (\\x.x)",
   run " \\ x . x "      "Yes (\\x.x)",
@@ -202,23 +207,26 @@ tests1 = [
   ]
   where
     tag = "juxta-exp"
-    (run,_runX) = runTestParseThen allowAmb (\(Parsing _ _ o) -> show o) tag lang
+    (run,_runX) = runTestParseThen rejectAmb (\(Parsing _ _ o) -> show o) tag lang
 
 
 -- test option to reject ambigious parses, reporting the Ambiguity NT and location
 tests2 :: [IO Bool]
 tests2 = [
-  run "a+b+c "      "AmbError (Ambiguity \"exp\" 0 5)",
+  run "a+b+c"       "Multiple 2 [(a+(b+c)),((a+b)+c)]",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
   
-  run "f(1+2+3)x"   "AmbError (Ambiguity \"exp\" 2 7)",
+  run "f(1+2+3)x"   "Multiple 2 [((f ((1+2)+3)) x),((f (1+(2+3))) x)]",
   run "f((1+2)+3)x" "Yes ((f ((1+2)+3)) x)",
-  run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)"
+  run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)",
+
+  run "f(1+2+3+4)x" "Multiple 5 [((f (((1+2)+3)+4)) x),((f ((1+2)+(3+4))) x),((f (1+(2+(3+4)))) x),((f ((1+(2+3))+4)) x),((f (1+((2+3)+4))) x)]"
+  
   ]
   where
     tag = "juxta-exp-no-amb"
-    (run,_runX) = runTestParseThen rejectAmb (\(Parsing _ _ o) -> show o) tag lang
+    (run,_runX) = runTestParseThen allowAmb (\(Parsing _ _ o) -> show o) tag lang
 
 
     

@@ -1,5 +1,5 @@
 -- Bare bones testing framework. TODO: use a real testing framework!
-module Testing(printCompare,runAll,runTestParseThen,runTest) where
+module Testing(printCompare,runAll,runTestParseThen,runTest,runTestAllowAmb) where
 
 import Control.Exception
 import System.Exit
@@ -57,5 +57,10 @@ runTestParseThen config f tag lang = (go False, go True)
 
 runTest :: (Show a, Eq a) => String -> Lang Char (Gram a)
         -> (String -> Outcome a -> IO Bool, String -> Outcome a -> IO Bool)
-runTest = runTestParseThen allowAmb (\(Parsing _ _ o) -> o)
+runTest = runTestParseThen rejectAmb (\(Parsing _ _ o) -> o)
+
+
+runTestAllowAmb :: (Show a, Eq a) => String -> Lang Char (Gram a)
+        -> (String -> Outcome a -> IO Bool, String -> Outcome a -> IO Bool)
+runTestAllowAmb = runTestParseThen allowAmb (\(Parsing _ _ o) -> o)
 

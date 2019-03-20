@@ -7,7 +7,7 @@ import OlegExample
 
 main :: IO ()
 main = runAll (concat [
-                  BasicExamples.tests,
                   JuxtaExpExample.tests,
                   OlegExample.tests,
+                  BasicExamples.tests,
                   []])
