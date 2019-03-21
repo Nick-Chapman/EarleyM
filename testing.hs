@@ -1,6 +1,7 @@
 -- Bare bones testing framework. TODO: use a real testing framework!
-module Testing(printCompare,runAll,runTestParseThen,runTest,runTestAllowAmb) where
-
+module Testing --(printCompare,runAll,runTestParseThen,runTest,runTestAllowAmb) where
+where
+       
 import Control.Exception
 import System.Exit
 import System.IO
@@ -66,4 +67,25 @@ runTest = runTestParseThen rejectAmb (\(Parsing _ _ o) -> o)
 runTestAllowAmb :: (Show a, Show t, Eq a) => String -> Lang t (Gram a)
         -> ([t] -> Outcome a -> IO Bool, [t] -> Outcome a -> IO Bool)
 runTestAllowAmb = runTestParseThen allowAmb (\(Parsing _ _ o) -> o)
+
+
+runTestCountAmbiguity :: (Show a, Show t) => String -> Lang t (Gram a)
+                      -> ([t] -> Int -> IO Bool, [t] -> Int -> IO Bool)
+runTestCountAmbiguity = runTestParseThen allowAmb measureAmbiguity
+
+countAmbiguity :: Outcome a -> Int
+countAmbiguity  o = case o of
+  No _ -> 0
+  Ambiguous _ -> 0
+  Yes _ -> 1
+  Multiple n _ -> n
+
+measureAmbiguity :: Parsing a -> Int
+measureAmbiguity (Parsing _ _ o) = countAmbiguity o
+
+measureEffort :: Parsing a -> Int
+measureEffort (Parsing (Eff e) _ _) = e
+
+measureEffortAndAmbiguity :: Parsing a -> (Int,Int)
+measureEffortAndAmbiguity (Parsing (Eff e) _ o) = (e, countAmbiguity o)
 

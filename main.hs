@@ -6,6 +6,7 @@ import JuxtaExpExample
 import OlegExample
 import EarlyWikiExample
 import NlpExample
+import LostWhitespaceExample
 
 main :: IO ()
 main = runAll (concat [
@@ -14,4 +15,5 @@ main = runAll (concat [
                   BasicExamples.tests,
                   EarlyWikiExample.tests,
                   [NlpExample.test],
+                  [LostWhitespaceExample.test], -- takes a few seconds
                   []])

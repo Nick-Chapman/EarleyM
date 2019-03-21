@@ -64,4 +64,4 @@ test =
   where
     tag = "telescope"
     run input xs = runW (Prelude.words input) (Multiple (length xs) xs)
-    (_,runW) = runTestParseThen allowAmb (\(Parsing _ _ o) -> fmap show o) tag lang
+    (runW,_) = runTestParseThen allowAmb (\(Parsing _ _ o) -> fmap show o) tag lang

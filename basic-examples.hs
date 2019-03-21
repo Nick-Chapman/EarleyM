@@ -15,23 +15,6 @@ digitTok tok =
 
 symTok :: Eq t => Gram t -> t -> Gram ()
 symTok tok x = do c <- tok; if c == x then return () else fail
-
-countAmbiguity :: Outcome a -> Int
-countAmbiguity  o = case o of
-  No _ -> 0
-  Ambiguous _ -> 0
-  Yes _ -> 1
-  Multiple n _ -> n
-
-measureAmbiguity :: Parsing a -> Int
-measureAmbiguity (Parsing _ _ o) = countAmbiguity o
-
-measureEffort :: Parsing a -> Int
-measureEffort (Parsing (Eff e) _ _) = e
-
-measureEffortAndAmbiguity :: Parsing a -> (Int,Int)
-measureEffortAndAmbiguity (Parsing (Eff e) _ o) = (e, countAmbiguity o)
-
                            
 tests1 :: [IO Bool]
 tests1 = [
