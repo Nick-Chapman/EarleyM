@@ -1,4 +1,4 @@
-{-#LANGUAGE Rank2Types, ExistentialQuantification #-}
+{-#LANGUAGE Rank2Types, ExistentialQuantification, DeriveFunctor #-}
 
 module Chart (NT,Gram,alts,fail,
               Lang,token,declare,produce,fix,
@@ -184,7 +184,7 @@ data Outcome a
   = No Pos
   | Ambiguous Ambiguity -- when: rejectAmb
   | Yes a
-  | Multiple Int [a] deriving (Show,Eq) -- when: allowAmb
+  | Multiple Int [a] deriving (Show,Eq,Functor) -- when: allowAmb
 
 outcomeOfState :: Pos -> Bool -> NT a -> State -> Outcome a
 outcomeOfState pos stillLooking start s = outcome
@@ -293,7 +293,7 @@ execItemsWithRules config rules eff items state = execItems eff items state
       Get ntB fB ->
         push (partials0 ++ partials1) (execItems (incEff eff) (items1 ++ items) s1)
         where
-          partials0 = [Dot (nt,p1) ntB]
+          partials0 = [] --Dot (nt,p1) ntB]
           (partials1,s1,items1) = awaitState s from reader 
           from = (ntB,p2)
           reader (b,p3) = (Item p1 nt p3 (fB b))

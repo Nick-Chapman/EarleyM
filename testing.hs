@@ -37,8 +37,11 @@ wrap io = handle (\e -> do
   return Nothing) (fmap Just io)
 
 
-runTestParseThen :: (Eq b, Show a, Show b) => Config -> (Parsing a -> b) -> String -> Lang Char (Gram a)
-                    -> (String -> b -> IO Bool, String -> b -> IO Bool)
+runTestParseThen ::
+  (Eq b, Show a, Show b, Show t) =>
+  Config -> (Parsing a -> b) -> String -> Lang t (Gram a) ->
+  ([t] -> b -> IO Bool,
+   [t] -> b -> IO Bool)
 runTestParseThen config f tag lang = (go False, go True)
   where
     go seePartials input expect = do
@@ -55,12 +58,12 @@ runTestParseThen config f tag lang = (go False, go True)
         actual = f parsing
         parsing = doParseConfig config lang input
 
-runTest :: (Show a, Eq a) => String -> Lang Char (Gram a)
-        -> (String -> Outcome a -> IO Bool, String -> Outcome a -> IO Bool)
+runTest :: (Show a, Show t, Eq a) => String -> Lang t (Gram a)
+        -> ([t] -> Outcome a -> IO Bool, [t] -> Outcome a -> IO Bool)
 runTest = runTestParseThen rejectAmb (\(Parsing _ _ o) -> o)
 
 
-runTestAllowAmb :: (Show a, Eq a) => String -> Lang Char (Gram a)
-        -> (String -> Outcome a -> IO Bool, String -> Outcome a -> IO Bool)
+runTestAllowAmb :: (Show a, Show t, Eq a) => String -> Lang t (Gram a)
+        -> ([t] -> Outcome a -> IO Bool, [t] -> Outcome a -> IO Bool)
 runTestAllowAmb = runTestParseThen allowAmb (\(Parsing _ _ o) -> o)
 

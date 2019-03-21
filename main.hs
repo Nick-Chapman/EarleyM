@@ -5,6 +5,7 @@ import BasicExamples
 import JuxtaExpExample
 import OlegExample
 import EarlyWikiExample
+import NlpExample
 
 main :: IO ()
 main = runAll (concat [
@@ -12,4 +13,5 @@ main = runAll (concat [
                   OlegExample.tests,
                   BasicExamples.tests,
                   EarlyWikiExample.tests,
+                  [NlpExample.test],
                   []])
