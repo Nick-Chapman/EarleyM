@@ -1,6 +1,6 @@
 module Pipe(Pipe,empty,firstWrite,firstRead,write,read,elems,readers) where
 
-import Prelude hiding (read)
+import Prelude hiding (read,elem)
 
 data Pipe a r = Pipe { elems :: [a], readers :: [a -> r] }
 

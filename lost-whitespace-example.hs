@@ -1,6 +1,6 @@
 module LostWhitespaceExample(test) where
 
-import Prelude hiding (fail)
+import Prelude hiding (fail,words)
 import qualified Data.Char as Char
 import Testing
 import Chart
@@ -10,9 +10,9 @@ import Chart
 
 genLang :: [String] -> Lang Char (Gram [String])
 genLang dict = do
-  tok <- token
-  let sym x = do c <- tok; if c == x then return c else fail
-  let word0 = alts (map (sequence . map sym) dict)
+  sym <- symbol
+  let lit x = do sym x; return x
+  let word0 = alts (map (sequence . map lit) dict)
   (word',word) <- declare"WORD"; produce word' word0 -- It's much slower if we dont make a non-terminal
   fix "words"$ \words -> return$ alts [
     return [],
@@ -36,4 +36,4 @@ test = do
     chars = filter (not . Char.isSpace) input
     run lang = runL chars expectedAmbCount
       where
-        (_,runL) = runTestCountAmbiguity tag lang
+        (runL,_) = runTestCountAmbiguity tag lang

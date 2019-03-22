@@ -14,6 +14,7 @@ seq gs = do xs <- sequence gs; return ("(" ++ concat xs ++ ")")
 
 tests :: [IO Bool]
 tests = [
+  do print (mkStaticLang lang); return True,
   run "2+3*4" (Yes "(2+(3*4))"),
   run "" (No 1)
   ]
@@ -22,16 +23,18 @@ tests = [
     (run,_run) = runTest tag lang 
     lang :: Lang Char (Gram String)
     lang = do
-      tok <- token
-      let dig = do c <- tok; if Char.isDigit c then return [c] else fail
-      let sym x = do c <- tok; if x==c then return [c] else fail
+      sat <- satisfy
+      sym <- symbol
 
+      let dig = sat"dig" $ \c -> if Char.isDigit c then Just [c] else Nothing
+      let lit x = do sym x; return [x]
+      
       (s',s) <- declare"S"
       (m',m) <- declare"M"
       (t',t) <- declare"T"
-      s' --> seq [s, sym '+', m]
+      s' --> seq [s, lit '+', m]
       s' --> m
-      m' --> seq [m, sym '*', t]
+      m' --> seq [m, lit '*', t]
       m' --> t
       produce t' dig
       return s

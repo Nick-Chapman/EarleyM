@@ -6,14 +6,14 @@ import JuxtaExpExample
 import OlegExample
 import EarlyWikiExample
 import NlpExample
-import LostWhitespaceExample
+--import LostWhitespaceExample
 
 main :: IO ()
 main = runAll (concat [
-                  JuxtaExpExample.tests,
                   OlegExample.tests,
                   BasicExamples.tests,
                   EarlyWikiExample.tests,
-                  [NlpExample.test],
-                  [LostWhitespaceExample.test], -- takes a few seconds
+                  JuxtaExpExample.tests,
+                  NlpExample.tests,
+                  --[LostWhitespaceExample.test], -- takes a few seconds
                   []])

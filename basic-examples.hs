@@ -1,21 +1,20 @@
 module BasicExamples(tests) where
 
-import Prelude hiding (fail,exp)
+import Prelude hiding (fail,exp,seq)
 import qualified Data.Char as Char
 import Testing
 import Chart
 
 
-digitOfChar :: Char -> Int
-digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
+digitLang :: Lang Char (Gram Int)
+digitLang = do
+  sat <- satisfy
+  return$ sat"digit" (\c -> if Char.isDigit c then Just (digitOfChar c) else Nothing)
+  where
+    digitOfChar :: Char -> Int
+    digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
 
-digitTok :: Gram Char -> Gram Int
-digitTok tok =
-  do c <- tok; if Char.isDigit c then return (digitOfChar c) else fail
-
-symTok :: Eq t => Gram t -> t -> Gram ()
-symTok tok x = do c <- tok; if c == x then return () else fail
-                           
+                                                          
 tests1 :: [IO Bool]
 tests1 = [
   run "" (No 1),
@@ -32,8 +31,7 @@ tests1 = [
     tag = "2dig"
     (run,_runX) = runTest tag lang 
     lang = do
-      tok <- token
-      let digit = digitTok tok
+      digit <- digitLang
       return $ do
         d1 <- digit
         d2 <- digit
@@ -55,8 +53,7 @@ tests2 = [
     tag = "num"
     (run,_runX) = runTest tag lang 
     lang = do
-      tok <- token
-      let digit = digitTok tok
+      digit <- digitLang
       fix"N" $ \num -> return$ alts [
         digit,
         do
@@ -93,9 +90,8 @@ tests3 = [
     tag = "expD"
     (run,_runX) = runTest tag lang 
     lang = do
-      tok <- token
-      let digit = digitTok tok
-      let sym = symTok tok
+      digit <- digitLang
+      sym <- symbol
       fix"E" $ \exp -> return $ alts [
         do d <- digit; return (Leaf d),
         do e1 <- exp; sym '+' ; e2 <- exp; return (Add e1 e2),
@@ -125,9 +121,8 @@ tests4 = [
     tag = "expN"
     (run,_runX) = runTest tag lang 
     lang = do
-      tok <- token
-      let digit = digitTok tok
-      let sym = symTok tok
+      digit <- digitLang
+      sym <- symbol
       num <- fix"N" $ \num -> return $ alts [
         digit,
         do n <- num; d <- digit; return (10 * n + d)
@@ -196,11 +191,11 @@ tests7 = [
 
 tests8 :: [IO Bool]
 tests8 = [ 
-  run "" 4,
-  run "a" 8, -- +4..
-  run "ab" 12,
-  run "abc" 16,
-  run "abcd" 20
+  run "" 3,
+  run "a" 6, -- +3..
+  run "ab" 9,
+  run "abc" 12,
+  run "abcd" 15
   ]
   where
     tag = "left-recursion"
@@ -214,11 +209,11 @@ tests8 = [
 
 tests9 :: [IO Bool]
 tests9 = [ 
-  run "" 2,
-  run "a" 6, -- +4,5,6,7..
-  run "ab" 11,
-  run "abc" 17,
-  run "abcd" 24
+  run "" 3,
+  run "a" 8, -- +5,6,7,8..
+  run "ab" 14,
+  run "abc" 21,
+  run "abcd" 29
   ]
   where
     tag = "right-recursion"
@@ -232,11 +227,11 @@ tests9 = [
 
 tests10 :: [IO Bool]
 tests10 = [ 
-  run "." 6,
-  run "a." 10, -- +4..
-  run "ab." 14,
-  run "abc." 18,
-  run "abcd." 22
+  run "." 8,
+  run "a." 12, -- +4..
+  run "ab." 16,
+  run "abc." 20,
+  run "abcd." 24
   ]
   where
     tag = "right-recursion-marked-termination"
@@ -244,9 +239,9 @@ tests10 = [
     (run,_run) = runTestParseThen allowAmb measureEffort tag lang 
     lang = do
       tok <- token
-      let mark = do c <- tok; if c=='.' then return () else fail
+      sym <- symbol
       let x = do _ <- tok; return ()
-      fix"R" $ \xs -> return $ alts [mark, do x; xs]
+      fix"R" $ \xs -> return $ alts [sym '.', do x; xs]
 
 
 tests11 :: [IO Bool]
@@ -260,7 +255,6 @@ tests11 = [
     tag = "unfolding-right-recursion"
     -- LINEAR -- Even when we measure the internal steps. Still kind of suprised.
     (run,_run) = runTestParseThen allowAmb measureEffort tag lang
-    many p = alts [return [], do x <- p; xs <- many p; return (x : xs)]
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -272,31 +266,31 @@ tests12 :: [IO Bool]
 tests12 = [
 
   -- LINEAR in the length of the input 
-  run "1;2" (24,1),
-  run "12;34" (36,1), -- +12..
-  run "123;456" (48,1),
-  run "1234;5678" (60,1),
+  run "1;2" (18,1),
+  run "12;34" (27,1), -- +9..
+  run "123;456" (36,1),
+  run "1234;5678" (45,1),
   
   -- where the semi colons are seems not to matter (or to matter only linearly)
-  run "1;2345678" (72,1),
-  run "12;345678" (68,1), -- -2..
-  run "123;45678" (64,1),
-  run "1234;5678" (60,1),
+  run "1;2345678" (54,1),
+  run "12;345678" (51,1), -- -3..
+  run "123;45678" (48,1),
+  run "1234;5678" (45,1),
 
   -- LINEAR in the amount of ambiguity (when semicolon added at the start)
-  run "12345678" (36,0),
-  run "1;2345678" (72,1), -- +36..
-  run "1;2;345678" (108,2),
-  run "1;2;3;45678" (144,3),
-  run "1;2;3;4;5678" (180,4),
+  run "12345678" (27,0),
+  run "1;2345678" (54,1), -- +27..
+  run "1;2;345678" (81,2),
+  run "1;2;3;45678" (108,3),
+  run "1;2;3;4;5678" (135,4),
 
   -- but QUADRATIC when semicolons are added at the back
-  run "12345678" (36,0),
-  run "1234567;8" (48,1), -- +12,20,28..
-  run "123456;7;8" (68,2),
-  run "12345;6;7;8" (96,3),
+  run "12345678" (27,0),
+  run "1234567;8" (36,1), -- +9,15,21
+  run "123456;7;8" (51,2),
+  run "12345;6;7;8" (72,3),
   
-  run "" (4,0)
+  run "" (3,0)
   ]
   where
     tag = "ambiguous-list-splits"
@@ -305,9 +299,9 @@ tests12 = [
       tok <- token
       let x = do _ <- tok; return ()
       xs <- fix"L" $ \xs -> return $ alts [x, do xs; x]
-      let semi = do c <- tok; if c==';' then return () else fail
+      sym <- symbol
       return$ do
-        xs; semi; xs
+        xs; sym ';'; xs
 
 
 

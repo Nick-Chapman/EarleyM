@@ -1,6 +1,8 @@
 -- Bare bones testing framework. TODO: use a real testing framework!
-module Testing --(printCompare,runAll,runTestParseThen,runTest,runTestAllowAmb) where
-where
+module Testing (printCompare,runAll,
+                runTestParseThen,runTest,runTestAllowAmb,runTestCountAmbiguity,
+                measureAmbiguity,measureEffort,measureEffortAndAmbiguity
+               ) where
        
 import Control.Exception
 import System.Exit
@@ -45,17 +47,18 @@ runTestParseThen ::
    [t] -> b -> IO Bool)
 runTestParseThen config f tag lang = (go False, go True)
   where
-    go seePartials input expect = do
-      () <- if seePartials
+    go debug input expect = do
+      --putStrLn ("Language (" ++ tag ++ ") " ++ show (mkStaticLang lang))
+      () <- if debug
             then do
+              putStrLn ("Language (" ++ tag ++ ") " ++ show (mkStaticLang lang))
               putStrLn ("Running (" ++ tag ++ ") " ++ show input)
-              _ <- sequence (map print partials)
-              putStrLn ("Effort = " ++ show effort)
-              putStrLn ("Outcome = " ++ show outcome)
+              _ <- sequence (map print (partials parsing))
+              putStrLn ("Effort = " ++ show (effort parsing))
+              putStrLn ("Outcome = " ++ show (outcome parsing))
             else return ()
       printCompare tag input actual expect
       where
-        Parsing effort partials outcome = parsing
         actual = f parsing
         parsing = doParseConfig config lang input
 
@@ -88,4 +91,3 @@ measureEffort (Parsing (Eff e) _ _) = e
 
 measureEffortAndAmbiguity :: Parsing a -> (Int,Int)
 measureEffortAndAmbiguity (Parsing (Eff e) _ o) = (e, countAmbiguity o)
-

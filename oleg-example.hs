@@ -28,8 +28,9 @@ sample bad grammar:
 
 lang :: Lang Char (Gram String)
 lang = do
-  tok <- token
-  let term x = do c <- tok; if c == x then return [c] else fail
+  sym <- symbol
+  let term c = do sym c; return [c]
+  
   (s',s) <- declare"s"
   (a',a) <- declare"a"
   (b',b) <- declare"b"

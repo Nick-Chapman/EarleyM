@@ -26,50 +26,90 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
 
 lang :: Lang Char (Gram Exp)
 
-data OpenOrClosedOnRight = Open | Closed deriving Show
-
-many :: Gram a -> Gram [a]  -- right recursion
-many p = alts [return [], do x <- p; xs <- many p; return (x : xs)]
+--data OpenOrClosedOnRight = Open | Closed deriving Show
 
 lang = do
-  tok <- token
-  let satisfy f = do c <- tok; if f c then return c else fail
-  let sym x = do _ <- satisfy (== x); return ()
-  let alpha = satisfy Char.isAlpha
-  let numer = satisfy Char.isDigit
+
+  sym <- symbol
+  sat0 <- satisfy
+  let sat name pred = sat0 name $ \c -> if pred c then Just c else Nothing
+  let alpha = sat "alpha" Char.isAlpha
+  let numer = sat "numer" Char.isDigit
   let digit = do c <- numer; return (digitOfChar c)
-  let white = do _ <- satisfy Char.isSpace; return ()
+  let white = do _ <- sat "white" Char.isSpace; return ()
   digits <- fix"digits" $ \digits -> return $ alts [
     do n <- digits; d <- digit; return (10 * n + d),
     digit
     ]
-  let ident = do x <- alpha; xs <- many (alts [alpha,numer]); return (x : xs) 
-  let ws = do white; alts [ws,return ()] -- required white space
-  let ows = alts [return (),ws] -- optional white space
+
+  ident <- share "ident" $ do x <- alpha; xs <- many (alts [alpha,numer]); return (x : xs) 
+  ws <- share "ws" (skipWhile white) -- optional white space
+
+  let required_ws = do white; ws
+  
   let var = do s <- ident; return (Var s)
   let num = do n <- digits; return (Num n)
-  let parenthesized thing = do sym '('; ows; x <- thing; ows; sym ')'; return x
-  let lambda exp = do sym '\\'; ows; x <- ident; ows; sym '.'; ows; e <- exp; return (Lam x e)
-  let lambdarized exp = alts [exp, lambda (lambdarized exp)]
+  let parenthesized thing = do sym '('; ws; x <- thing; ws; sym ')'; return x
+
+  --let lambda exp = do sym '\\'; ws; x <- ident; ws; sym '.'; ws; e <- exp; return (Lam x e)
+  --let lambdarized exp = alts [exp, lambda (lambdarized exp)] -- right recursion
+  
+  let lambdarized exp = do
+        xs <- many (do sym '\\'; ws; x <- ident; ws; sym '.'; ws; return x)
+        e <- exp
+        return$ foldr Lam e xs
+
   exp <- fix"exp" $ \exp -> do
+
+    lambdarized_exp <- share "lambda" (lambdarized exp)
+    --let lambdarized_exp = (lambdarized exp)
+    
+{-
     let leftOpenAtom =   do e <- alts [var,num];                  return (e,Open)
     let leftClosedAtom = do e <- parenthesized (lambdarized exp); return (e,Closed)
     let atom = alts [leftClosedAtom, leftOpenAtom]
+
     app <- fix"app" $ \app -> return $ alts [
       atom,
       do
-        (a,oc1) <- app;
-        gap <- alts [return False, do ws; return True]
-        (b,oc2) <- case (oc1,gap) of (Open,False) -> leftClosedAtom; _ -> atom
+        ~(a,oc1) <- app;
+        gap <- alts [return False, do required_ws; return True]
+        (b,oc2) <- case (oc1,gap) of (Open,False) -> leftClosedAtom; _ -> atom -- CONTEXT SENSITIVE
         return (App a b, oc2)
       ]
-    let application = do (a,_) <- app; return a
+    let application = do ~(a,_) <- app; return a
+-}
+
+    -- must distingish open/closed atoms and applications
+
+    atomO <- share "atomO" (alts [var,num])
+    atomC <- share "atomC" (parenthesized (lambdarized_exp))
+
+    (appC',appC) <- declare"appC"
+    (appO',appO) <- declare"appO"
+    
+    produce appC' $ alts [
+      atomC,
+      do a <- appC; ws; b <- atomC; return (App a b),
+      do a <- appO; ws; b <- atomC; return (App a b)
+      ]
+    
+    produce appO' $ alts [
+      atomO,
+      do a <- appC;          ws; b <- atomO; return (App a b),
+      do a <- appO; required_ws; b <- atomO; return (App a b)
+      ]
+      
+    let application = alts [appO,appC]
+
     let addition = alts [
           application,
-          do a <- exp; ows; sym '+'; ows; b <- exp; return (Add a b) -- grammar is ambiguous here
+          do a <- exp; ws; sym '+'; ws; b <- exp; return (Add a b) -- grammar is deliberately ambiguous here
           ]
+
     return addition
-  let start = do ows; e <- lambdarized exp; ows; return e
+    
+  let start = do ws; e <- lambdarized exp; ws; return e
   return start
 
 
@@ -213,7 +253,7 @@ tests1 = [
 -- test option to reject ambigious parses, reporting the Ambiguity NT and location
 tests2 :: [IO Bool]
 tests2 = [
-  run "a+b+c"       "Multiple 2 [(a+(b+c)),((a+b)+c)]",
+  run "a+b+c"       "Multiple 2 [((a+b)+c),(a+(b+c))]",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
   
@@ -229,9 +269,9 @@ tests2 = [
     (run,_runX) = runTestParseThen allowAmb (\(Parsing _ _ o) -> show o) tag lang
 
 
-    
 tests :: [IO Bool]
 tests = concat [
+  [do print (mkStaticLang lang); return True],
   tests1,
   tests2,
   []

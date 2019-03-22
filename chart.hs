@@ -1,7 +1,8 @@
-{-#LANGUAGE Rank2Types, ExistentialQuantification, DeriveFunctor #-}
+{-#LANGUAGE Rank2Types, ExistentialQuantification, DeriveFunctor, GADTs #-}
 
-module Chart (NT,Gram,alts,fail,
-              Lang,token,declare,produce,fix,
+module Chart (NT,Gram,alts,fail,many,skipWhile,
+              Lang, satisfy,token,symbol, declare,produce,share,fix, 
+              StaticLang,mkStaticLang,
               Config,allowAmb,rejectAmb,
               Parsing(..),Eff(..),Partial,Outcome(..),Ambiguity(..),Pos,doParseConfig,doParse)
 where
@@ -12,6 +13,7 @@ import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.HMap as HMap
 import Data.HMap(HKey,HMap)
+import Data.List
 import qualified Pipe
 import Pipe(Pipe)
 
@@ -23,6 +25,9 @@ instance Show NtName where
 
 data NT a = forall x. NT NtName (a -> String) (HKey x (StateValue a))
 
+nameOfNt :: NT a -> NtName
+nameOfNt (NT name _ _) = name
+
 withNT :: Show a => NtName -> (NT a -> b) -> b
 withNT name k = HMap.withKey $ \key -> k (NT name show key)
 
@@ -33,26 +38,46 @@ instance Show (NT a) where
   show (NT name _ _) = show name
 
 
-data Gram a = Alts [Gram a] | Ret a | forall b. Get (NT b) (b -> Gram a)
-
+data Gram a where
+  Ret :: a -> Gram a
+  Alts :: [Gram a] -> Gram a
+  Sat :: String -> (NT b) -> (b -> Maybe c) -> (c -> Gram a) -> Gram a
+  Many :: Gram a -> Gram [a]
+  Bind :: Gram a -> (a -> Gram b) -> Gram b
+         
 instance Functor Gram where fmap = liftM
 instance Applicative Gram where pure = return; (<*>) = ap
 
 instance Monad Gram where
   return = Ret
-  (>>=) gram f = case gram of
-    Alts gs -> Alts (do g <- gs; return (g >>= f))
-    Get nt k -> Get nt (\a -> k a >>= f)
-    Ret a  -> f a
+  (>>=) = Bind
+
+bind :: Gram a -> (a -> Gram b) -> Gram b
+bind gram f = case gram of
+  Ret a -> f a
+  Alts gs -> Alts (do g <- gs; return (g >>= f))
+  Sat s nt p k -> Sat s nt p (\a -> k a >>= f)
+  Many g -> Alts [f [], do x <- g; xs <- Many g; f (x : xs)]
+  Bind g f1 -> Bind g (\x -> f1 x >>= f)
+
+satNT :: NT a -> String -> (a -> Maybe b) -> Gram b
+satNT nt s p = Sat s nt p Ret
 
 referenceNT :: NT a -> Gram a
-referenceNT nt = Get nt Ret
+referenceNT nt = satNT nt (show nt) Just
 
 alts :: [Gram a] -> Gram a
 alts = Alts
 
 fail :: Gram a
 fail = Alts []
+
+many :: Gram a -> Gram [a]
+many = Many
+
+skipWhile :: Gram () -> Gram ()
+skipWhile p = do _ <- many p; return ()
+
 
 
 data Rule = forall a. Rule (NT a) (Gram a)
@@ -64,7 +89,8 @@ isRuleKeyedBy nt1 (Rule nt2 _) =
   HMap.unique key1 == HMap.unique key2
 
 
-data Lang t a = Lang { runLang :: Gram t -> (a, [Rule]) }
+type Satisfy t = forall a. (String -> (t -> Maybe a) -> Gram a)
+data Lang t a = Lang { runLang :: Satisfy t -> (a, [Rule]) }
 
 instance Functor (Lang t) where fmap = liftM
 instance Applicative (Lang t) where pure = return; (<*>) = ap
@@ -76,27 +102,42 @@ instance Monad (Lang t) where
     let (b,ps2) = runLang (f a) t in
     (b,ps1++ps2)
 
+satisfy :: Lang t (String -> (t -> Maybe a) -> Gram a)
+satisfy = Lang$ \sat -> (sat,[])
 
 token :: Lang t (Gram t)
-token = Lang$ \t -> (t,[])
+token = do
+  sat <- satisfy
+  return (sat "." Just)
+
+symbol :: (Show t, Eq t) => Lang t (t -> Gram ())
+symbol = do
+  sat <- satisfy
+  return$ \x -> sat (show x) (\t -> if t==x then Just () else Nothing)
 
 createNamedNT :: Show a => String -> Lang t (NT a)
 createNamedNT name = Lang$ \_ -> withNT (NtName name) $ \nt -> (nt,[])
-
-produce :: NT a -> Gram a -> Lang t ()
-produce nt gram = Lang$ \_ -> ((),[Rule nt gram])
 
 declare :: Show a => String -> Lang t (NT a, Gram a)
 declare name = do
   nt <- createNamedNT name
   return (nt, referenceNT nt)
+
+produce :: NT a -> Gram a -> Lang t ()
+produce nt gram = Lang$ \_ -> ((),[Rule nt gram])
+
+share :: Show a => String -> Gram a -> Lang t (Gram a)
+share name gram = do
+  (nt,g2) <- declare name
+  produce nt gram
+  return g2
   
 fix :: Show a => String -> (Gram a -> Lang t (Gram a)) -> Lang t (Gram a)
 fix name f = do
   (nt,gram) <- declare name
   fixed <- f gram
   () <- produce nt fixed
-  return fixed
+  return gram
 
 
 type Pos = Int
@@ -226,10 +267,10 @@ doParse = doParseConfig allowAmb
           
 doParseConfig :: (Show t, Show a) => Config -> Lang t (Gram a) -> [t] -> Parsing a
 doParseConfig config lang input =
-  withNT Terminal $ \token ->
-  withNT Start $ \start ->
-  let (gram,rules) = runLang lang (referenceNT token) in
-  go config token (start,gram) rules input  
+  withNT Terminal $ \tokenNT ->
+  withNT Start $ \startNT ->
+  let (gram,rules) = runLang lang (satNT tokenNT) in
+  go config tokenNT (startNT,gram) rules input  
 
 go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> Parsing a
 go config token (start,gram) rules input =
@@ -290,13 +331,25 @@ execItemsWithRules config rules eff items state = execItems eff items state
           partials = [Complete from upto]
           from = (nt,p1)
           upto = (a,p2)
-      Get ntB fB ->
+
+      Sat _ ntB satB fC ->
         push (partials0 ++ partials1) (execItems (incEff eff) (items1 ++ items) s1)
         where
           partials0 = [] --Dot (nt,p1) ntB]
           (partials1,s1,items1) = awaitState s from reader 
           from = (ntB,p2)
-          reader (b,p3) = (Item p1 nt p3 (fB b))
+          reader (b,p3) = (Item p1 nt p3 nextG)
+            where nextG = case satB b of
+                    Just c -> fC c
+                    Nothing -> Alts []
+
+      Many g -> execItems eff (Item p1 nt p2 many_g : items) s
+        where 
+          many_g = alts [return [], do x <- g; xs <- many_g; return (x : xs)]
+
+      Bind g f -> execItems eff (Item p1 nt p2 bind_g_f : items) s
+        where 
+          bind_g_f = bind g f
 
       where
         push ps1 (eff,ps2,s) = (eff,ps1++ps2,s)
@@ -336,3 +389,53 @@ execItemsWithRules config rules eff items state = execItems eff items state
     predict (nt,pos) = do
       rule <- findRules nt
       return (itemOfRule pos rule)
+
+
+----------------------------------------------------------------------
+
+data StaticElem
+  = Elem String
+  | Star [StaticElem]
+    
+instance Show StaticElem where
+  show (Elem s) = s
+  show (Star [e]) = show e ++ "*"
+  show (Star es) = "(" ++ intercalate " " (map show es) ++ ")*"
+
+type StaticRhs = [StaticElem]
+data StaticRule = StaticRule NtName StaticRhs
+instance Show StaticRule where
+  show (StaticRule lhs rhs) =
+    intercalate " " ([show lhs, "-->"] ++ map show rhs)
+
+data StaticLang = StaticLang NtName [StaticRule]
+instance Show StaticLang where
+  show (StaticLang start rules) =
+    intercalate "\n" ("" : (show start ++ " where") : map show rules) ++ "\n"
+                  
+mkStaticOfGram :: [StaticElem] -> Gram a -> [StaticRhs]
+mkStaticOfGram elems gram = case gram of
+  Ret _  -> [elems]
+  Alts gs -> concat (map (mkStaticOfGram elems) gs)
+  Sat s _ _ k -> mkStaticOfGram (Elem s : elems) (k undef)
+  Many g -> do
+    es <- mkStaticOfGram [] g
+    [Star (reverse es) : elems]
+  Bind g f -> do
+    es <- mkStaticOfGram elems g
+    mkStaticOfGram es (f undef)
+  where
+    undef = error "mkStatic, use of undefined"
+
+mkStaticOfRule :: Rule -> [StaticRule]
+mkStaticOfRule (Rule nt gram) = do
+  es <- mkStaticOfGram [] gram
+  [StaticRule (nameOfNt nt) (reverse es)]
+
+mkStaticLang :: (Show t, Show a) => Lang t (Gram a) -> StaticLang
+mkStaticLang lang =
+  withNT Terminal $ \tokenNT ->
+  withNT Start $ \startNT ->
+  let (gram,rules) = runLang lang (satNT tokenNT) in
+  let rules1 = Rule startNT gram : rules in
+  StaticLang (nameOfNt startNT) (concat (map mkStaticOfRule rules1))

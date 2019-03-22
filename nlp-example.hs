@@ -1,4 +1,4 @@
-module NlpExample(test) where
+module NlpExample(tests) where
 
 -- Prepositional phrase attachment ambiguity example. See:
 -- https://allthingslinguistic.com/post/52411342274/how-many-meanings-can-you-get-for-the-sentence-i
@@ -16,18 +16,12 @@ instance Show Tree where
 
 lang :: Lang String (Gram Tree)
 lang = do
-  tok <- token
-  let lex ws = alts (map (\w -> do
-                             w' <- tok
-                             if w==w' then return () else fail
-                             return (Word w)
-                         ) ws)
 
-  let pro  = lex ["I"]
-  let det  = lex ["the","a"]
-  let verb = lex ["saw"]
-  let noun = lex ["man","telescope","hill"]    
-  let prep = lex ["on","with"]    
+  pro  <- lex"PRO" ["I"]
+  det  <- lex"D" ["the","a"]
+  verb <- lex"V" ["saw"]
+  noun <- lex"N" ["man","telescope","hill"]    
+  prep <- lex"P" ["on","with"]    
   
   (s',s)   <- declare"S"
   (np',np) <- declare"NP"
@@ -44,6 +38,14 @@ lang = do
   
   return s
 
+lex :: String -> [String] -> Lang String (Gram Tree)
+lex name ws = do
+  sat <- satisfy
+  share name $
+    alts (map (\w -> do
+                  sat (show w) (\w' -> if w==w' then Just () else Nothing)
+                  return (Word w)
+              ) ws)
 
 seq :: [Gram Tree] -> Gram Tree
 seq = fmap Phrase . sequence
@@ -63,5 +65,11 @@ test =
   ]
   where
     tag = "telescope"
-    run input xs = runW (Prelude.words input) (Multiple (length xs) xs)
+    run input xs = do runW (Prelude.words input) (Multiple (length xs) xs)
     (runW,_) = runTestParseThen allowAmb (\(Parsing _ _ o) -> fmap show o) tag lang
+
+tests :: [IO Bool]
+tests =  [
+  do print (mkStaticLang lang); return True,
+  test
+  ]
