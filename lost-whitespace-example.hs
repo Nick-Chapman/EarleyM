@@ -1,12 +1,13 @@
 module LostWhitespaceExample(test) where
 
-import Prelude hiding (fail,words)
+import Prelude hiding (fail)
 import qualified Data.Char as Char
 import Testing
 import Chart
 
--- This is an example of using a dictionary to lex a sentence back into words,
--- after having had the interword space removed!
+-- This example constructs a very large grammar (from a dictionary), which is used to lex a sentence,
+-- which has had it's interword whitespace removed, back into the original words, 
+-- and also finds some alternative original sentences.
 
 genLang :: [String] -> Lang Char (Gram [String])
 genLang dict = do
@@ -27,13 +28,14 @@ test = do
   where
     tag = "lost-whitespace"
 
-    input = "I saw the man on the hill with a telescope"
-    expectedAmbCount = 3
-                       -- I saw the man on the hill with a telescope
-                       -- I saw them a non the hill with a telescope
-                       -- I saw them anon the hill with a telescope
+    input = filter (not . Char.isSpace) $       
+      "I saw the man on the hill with a telescope"
     
-    chars = filter (not . Char.isSpace) input
-    run lang = runL chars expectedAmbCount
-      where
-        (runL,_) = runTestCountAmbiguity tag lang
+    expected = Right$ map Prelude.words [
+      "I saw the man on the hill with a telescope",
+      "I saw them a non the hill with a telescope",
+      "I saw them anon the hill with a telescope"
+      ]
+
+    run :: Lang Char (Gram [String]) -> IO Bool
+    run lang = check (outcome . parseAmb lang) tag input expected

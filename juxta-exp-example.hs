@@ -25,11 +25,7 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
     Add e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
 
 lang :: Lang Char (Gram Exp)
-
---data OpenOrClosedOnRight = Open | Closed deriving Show
-
 lang = do
-
   sym <- symbol
   sat0 <- satisfy
   let sat name pred = sat0 name $ \c -> if pred c then Just c else Nothing
@@ -41,74 +37,39 @@ lang = do
     do n <- digits; d <- digit; return (10 * n + d),
     digit
     ]
-
   ident <- share "ident" $ do x <- alpha; xs <- many (alts [alpha,numer]); return (x : xs) 
   ws <- share "ws" (skipWhile white) -- optional white space
-
   let required_ws = do white; ws
-  
   let var = do s <- ident; return (Var s)
   let num = do n <- digits; return (Num n)
   let parenthesized thing = do sym '('; ws; x <- thing; ws; sym ')'; return x
-
-  --let lambda exp = do sym '\\'; ws; x <- ident; ws; sym '.'; ws; e <- exp; return (Lam x e)
-  --let lambdarized exp = alts [exp, lambda (lambdarized exp)] -- right recursion
-  
   let lambdarized exp = do
         xs <- many (do sym '\\'; ws; x <- ident; ws; sym '.'; ws; return x)
         e <- exp
         return$ foldr Lam e xs
-
   exp <- fix"exp" $ \exp -> do
-
     lambdarized_exp <- share "lambda" (lambdarized exp)
-    --let lambdarized_exp = (lambdarized exp)
-    
-{-
-    let leftOpenAtom =   do e <- alts [var,num];                  return (e,Open)
-    let leftClosedAtom = do e <- parenthesized (lambdarized exp); return (e,Closed)
-    let atom = alts [leftClosedAtom, leftOpenAtom]
-
-    app <- fix"app" $ \app -> return $ alts [
-      atom,
-      do
-        ~(a,oc1) <- app;
-        gap <- alts [return False, do required_ws; return True]
-        (b,oc2) <- case (oc1,gap) of (Open,False) -> leftClosedAtom; _ -> atom -- CONTEXT SENSITIVE
-        return (App a b, oc2)
-      ]
-    let application = do ~(a,_) <- app; return a
--}
-
-    -- must distingish open/closed atoms and applications
-
+    -- distingish open/closed atoms and applications
     atomO <- share "atomO" (alts [var,num])
     atomC <- share "atomC" (parenthesized (lambdarized_exp))
-
     (appC',appC) <- declare"appC"
     (appO',appO) <- declare"appO"
-    
     produce appC' $ alts [
       atomC,
       do a <- appC; ws; b <- atomC; return (App a b),
       do a <- appO; ws; b <- atomC; return (App a b)
       ]
-    
     produce appO' $ alts [
       atomO,
       do a <- appC;          ws; b <- atomO; return (App a b),
       do a <- appO; required_ws; b <- atomO; return (App a b)
       ]
-      
     let application = alts [appO,appC]
-
     let addition = alts [
           application,
           do a <- exp; ws; sym '+'; ws; b <- exp; return (Add a b) -- grammar is deliberately ambiguous here
           ]
-
     return addition
-    
   let start = do ws; e <- lambdarized exp; ws; return e
   return start
 
@@ -140,15 +101,15 @@ tests1 = [
   run "a+b"         "Yes (a+b)",
   run " a + b "     "Yes (a+b)",
 
-  run "a+b+c "      "Ambiguous (Ambiguity \"exp\" 0 5)",
+  run "a+b+c "      "Amb (Ambiguity \"exp\" 0 5)",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
   
-  run "f(1+2+3)x"   "Ambiguous (Ambiguity \"exp\" 2 7)",
+  run "f(1+2+3)x"   "Amb (Ambiguity \"exp\" 2 7)",
   run "f((1+2)+3)x" "Yes ((f ((1+2)+3)) x)",
   run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)",
 
-  run "f(1+2+3+4)x" "Ambiguous (Ambiguity \"exp\" 2 7)",
+  run "f(1+2+3+4)x" "Amb (Ambiguity \"exp\" 2 7)",
 
   
   -- examples originally copied from parser4v tests
@@ -247,10 +208,10 @@ tests1 = [
   ]
   where
     tag = "juxta-exp"
-    (run,_runX) = runTestParseThen rejectAmb (\(Parsing _ _ o) -> show o) tag lang
+    run = check (show . classifyParseResult . outcome . parse lang) tag
 
 
--- test option to reject ambigious parses, reporting the Ambiguity NT and location
+-- test parse allowing ambigious parses
 tests2 :: [IO Bool]
 tests2 = [
   run "a+b+c"       "Multiple 2 [((a+b)+c),(a+(b+c))]",
@@ -266,7 +227,7 @@ tests2 = [
   ]
   where
     tag = "juxta-exp-no-amb"
-    (run,_runX) = runTestParseThen allowAmb (\(Parsing _ _ o) -> show o) tag lang
+    run = check (show . classifyParseAmbResult . outcome . parseAmb lang) tag
 
 
 tests :: [IO Bool]
@@ -278,3 +239,19 @@ tests = concat [
   ]
 
   
+data YN a = Yes a | Multiple Int [a] | No Pos | Amb Ambiguity deriving Show
+
+classifyParseResult :: Either ParseError a -> YN a
+classifyParseResult (Right a) = Yes a
+classifyParseResult (Left (SyntaxError (UnexpectedTokenAt pos))) = No pos
+classifyParseResult (Left (SyntaxError (UnexpectedEOF pos))) = No pos
+classifyParseResult (Left (SyntaxError (ExpectedEOF pos))) = No pos
+classifyParseResult (Left (AmbiguityError amb)) = Amb amb
+
+classifyParseAmbResult :: Either SyntaxError [a] -> YN a
+classifyParseAmbResult (Right [a]) = Yes a
+classifyParseAmbResult (Right as) = Multiple (length as) as
+classifyParseAmbResult (Left (UnexpectedTokenAt pos)) = No pos
+classifyParseAmbResult (Left (UnexpectedEOF pos)) = No pos
+classifyParseAmbResult (Left (ExpectedEOF pos)) = No pos
+

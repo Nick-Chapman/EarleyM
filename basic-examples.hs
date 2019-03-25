@@ -14,22 +14,32 @@ digitLang = do
     digitOfChar :: Char -> Int
     digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
 
-                                                          
+
+err :: Pos -> Either ParseError b
+err pos = Left (SyntaxError (UnexpectedTokenAt pos))
+
+incomplete :: Pos -> Either ParseError b
+incomplete pos = Left (SyntaxError (UnexpectedEOF pos))
+
+amb :: Ambiguity -> Either ParseError b
+amb a = Left (AmbiguityError a)
+
+           
 tests1 :: [IO Bool]
 tests1 = [
-  run "" (No 1),
-  run "x" (No 1),
-  run "xy" (No 1),
-  run "5" (No 2),
-  run "5x" (No 2),
-  run "5xy" (No 2),
-  run "56" (Yes 56),
-  run "56x" (No 3),
-  run "56xy" (No 3)
+  run "" (incomplete 1),
+  run "x" (err 1),
+  run "xy" (err 1),
+  run "5" (incomplete 2),
+  run "5x" (err 2),
+  run "5xy" (err 2),
+  run "56" (Right 56),
+  run "56x" (Left (SyntaxError (ExpectedEOF 3))),
+  run "56xy" (Left (SyntaxError (ExpectedEOF 3)))
   ]
   where
     tag = "2dig"
-    (run,_runX) = runTest tag lang 
+    run = check (outcome . parse lang) tag
     lang = do
       digit <- digitLang
       return $ do
@@ -40,18 +50,18 @@ tests1 = [
 
 tests2 :: [IO Bool]
 tests2 = [
-  run "" (No 1),
-  run "x" (No 1),
-  run "5" (Yes 5),
-  run "5x" (No 2),
-  run "5xy" (No 2),
-  run "56" (Yes 56),
-  run "56x" (No 3),
-  run "567" (Yes 567)
+  run "" (incomplete 1),
+  run "x" (err 1),
+  run "5" (Right 5),
+  run "5x" (err 2),
+  run "5xy" (err 2),
+  run "56" (Right 56),
+  run "56x" (err 3),
+  run "567" (Right 567)
   ]
   where
     tag = "num"
-    (run,_runX) = runTest tag lang 
+    run = check (outcome . parse lang) tag
     lang = do
       digit <- digitLang
       fix"N" $ \num -> return$ alts [
@@ -67,28 +77,28 @@ data E = Leaf Int | Add E E deriving (Show,Eq)
 
 tests3 :: [IO Bool]
 tests3 = [
-  run "5" (Yes (Leaf 5)),
-  run "(5)" (Yes (Leaf 5)),
-  run "((5))" (Yes (Leaf 5)),
-  run "5+6" (Yes (Add (Leaf 5) (Leaf 6))),
-  run "5+6+7" (Ambiguous (Ambiguity "E" 0 5)),
-  run "(5+6)+7" (Yes (Add (Add (Leaf 5) (Leaf 6)) (Leaf 7))),
-  run "5+(6+7)" (Yes (Add (Leaf 5) (Add (Leaf 6) (Leaf 7)))),
-  run "xy" (No 1),
-  run "(xy" (No 2),
-  run "(5" (No 3),
-  run ")x" (No 1),
-  run "+5" (No 1),
-  run "5+" (No 3),
-  run "5++6" (No 3),
-  run "56" (No 2),
-  run "56+7" (No 2),
-  run "5)x" (No 2),
-  run "" (No 1)
+  run "5" (Right (Leaf 5)),
+  run "(5)" (Right (Leaf 5)),
+  run "((5))" (Right (Leaf 5)),
+  run "5+6" (Right (Add (Leaf 5) (Leaf 6))),
+  run "5+6+7" (amb (Ambiguity "E" 0 5)),
+  run "(5+6)+7" (Right (Add (Add (Leaf 5) (Leaf 6)) (Leaf 7))),
+  run "5+(6+7)" (Right (Add (Leaf 5) (Add (Leaf 6) (Leaf 7)))),
+  run "xy" (err 1),
+  run "(xy" (err 2),
+  run "(5" (incomplete 3),
+  run ")x" (err 1),
+  run "+5" (err 1),
+  run "5+" (incomplete 3),
+  run "5++6" (err 3),
+  run "56" (err 2),
+  run "56+7" (err 2),
+  run "5)x" (err 2),
+  run "" (incomplete 1)
   ]
   where
     tag = "expD"
-    (run,_runX) = runTest tag lang 
+    run = check (outcome . parse lang) tag
     lang = do
       digit <- digitLang
       sym <- symbol
@@ -101,25 +111,25 @@ tests3 = [
 
 tests4 :: [IO Bool]
 tests4 = [
-  run "51" (Yes (Leaf 51)),
-  run "(51)" (Yes (Leaf 51)),
-  run "51+61" (Yes (Add (Leaf 51) (Leaf 61))),
-  run "51+61+71" (Ambiguous (Ambiguity "E" 0 7)),
-  run "(51+61)+71" (Yes (Add (Add (Leaf 51) (Leaf 61)) (Leaf 71))),
-  run "51+(61+71)" (Yes (Add (Leaf 51) (Add (Leaf 61) (Leaf 71)))),
-  run "xy" (No 1),
-  run "(xy" (No 2),
-  run "(51" (No 4),
-  run ")x" (No 1),
-  run "+51" (No 1),
-  run "51+" (No 4),
-  run "51++61" (No 4),
-  run "51)x" (No 3),
-  run "" (No 1)
+  run "51" (Right (Leaf 51)),
+  run "(51)" (Right (Leaf 51)),
+  run "51+61" (Right (Add (Leaf 51) (Leaf 61))),
+  run "51+61+71" (amb (Ambiguity "E" 0 7)),
+  run "(51+61)+71" (Right (Add (Add (Leaf 51) (Leaf 61)) (Leaf 71))),
+  run "51+(61+71)" (Right (Add (Leaf 51) (Add (Leaf 61) (Leaf 71)))),
+  run "xy" (err 1),
+  run "(xy" (err 2),
+  run "(51" (incomplete 4),
+  run ")x" (err 1),
+  run "+51" (err 1),
+  run "51+" (incomplete 4),
+  run "51++61" (err 4),
+  run "51)x" (err 3),
+  run "" (incomplete 1)
   ]
   where
     tag = "expN"
-    (run,_runX) = runTest tag lang 
+    run = check (outcome . parse lang) tag
     lang = do
       digit <- digitLang
       sym <- symbol
@@ -137,6 +147,10 @@ tests4 = [
 
 -- counting outcomes...
 
+countAmb :: Either e [a] -> Int
+countAmb (Left _) = 0
+countAmb (Right xs) = length xs
+    
 tests5 :: [IO Bool]
 tests5 = [
   run "" 0,
@@ -149,7 +163,7 @@ tests5 = [
   ]
   where
     tag = "catalan"
-    (run,_runX) = runTestParseThen allowAmb measureAmbiguity tag lang 
+    run = check (countAmb . outcome . parseAmb lang) tag
     seq g1 g2 = do x1 <- g1; x2 <- g2; return$ "("++x1++x2++")"
     lang = do
       tok <- token
@@ -169,7 +183,7 @@ tests6 = [
   ]
   where
     tag = "zeroG"
-    (run,_runX) = runTestParseThen allowAmb measureAmbiguity tag lang 
+    run = check (countAmb . outcome . parseAmb lang) tag
     lang = do
       return (do (fail :: Gram Int))
 
@@ -182,12 +196,17 @@ tests7 = [
   ]
   where
     tag = "unitG"
-    (run,_runX) = runTestParseThen allowAmb measureAmbiguity tag lang 
+    run = check (countAmb . outcome . parseAmb lang) tag
     lang = do
       return (do return ())
 
 
--- check effort for left/right recursions
+-- checkIO effort for left/right recursions
+
+
+unEff :: Eff -> Int
+unEff (Eff x) = x
+
 
 tests8 :: [IO Bool]
 tests8 = [ 
@@ -200,7 +219,7 @@ tests8 = [
   where
     tag = "left-recursion"
     -- LINEAR
-    (run,_runX) = runTestParseThen allowAmb measureEffort tag lang 
+    run = check (unEff . effort . parse lang) tag
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -218,7 +237,7 @@ tests9 = [
   where
     tag = "right-recursion"
     -- QUADRATIC -- expected.
-    (run,_run) = runTestParseThen allowAmb measureEffort tag lang 
+    run = check (unEff . effort . parse lang) tag
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -236,7 +255,7 @@ tests10 = [
   where
     tag = "right-recursion-marked-termination"
     -- LINEAR
-    (run,_run) = runTestParseThen allowAmb measureEffort tag lang 
+    run = check (unEff . effort . parse lang) tag
     lang = do
       tok <- token
       sym <- symbol
@@ -254,7 +273,7 @@ tests11 = [
   where
     tag = "unfolding-right-recursion"
     -- LINEAR -- Even when we measure the internal steps. Still kind of suprised.
-    (run,_run) = runTestParseThen allowAmb measureEffort tag lang
+    run = check (unEff . effort . parse lang) tag
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -294,7 +313,10 @@ tests12 = [
   ]
   where
     tag = "ambiguous-list-splits"
-    (run,_run) = runTestParseThen allowAmb measureEffortAndAmbiguity tag lang
+    run = check (measure . parseAmb lang) tag
+
+    measure parsing = (unEff (effort parsing), countAmb (outcome parsing))
+    
     lang = do
       tok <- token
       let x = do _ <- tok; return ()
@@ -307,16 +329,15 @@ tests12 = [
 
 tests13 :: [IO Bool]
 tests13 = [
-  check "",
-  check "a",
-  check "ab",
-  check "abc",
-  check "abcd"
+  run "",
+  run "a",
+  run "ab",
+  run "abc",
+  run "abcd"
   ]
   where
     tag = "everything"
-    check input = run input (Yes input)
-    (run,_run) = runTest tag lang 
+    run input = check (outcome . parse lang) tag input (Right input)
     lang :: Lang Char (Gram String)
     lang = do
       tok <- token
@@ -327,16 +348,15 @@ tests13 = [
 
 tests14 :: [IO Bool]
 tests14 = [
-  check "",
-  check "a",
-  check "ab",
-  check "abc",
-  check "abcd"
+  run "",
+  run "a",
+  run "ab",
+  run "abc",
+  run "abcd"
   ]
   where
     tag = "everything/read-pipe-existing-elems"
-    check input = run input (Yes input)
-    (run,_run) = runTest tag lang 
+    run input = check (outcome . parse lang) tag input (Right input)
     lang :: Lang Char (Gram String)
     lang = do
       tok <- token
@@ -348,15 +368,15 @@ tests14 = [
 
 tests15 :: [IO Bool]
 tests15 = [
-  check "a" 2,
-  check "ab" 4,
-  check "abc" 8,
-  check "abcd" 16
+  run "a" 2,
+  run "ab" 4,
+  run "abc" 8,
+  run "abcd" 16
   ]
   where
     tag = "everything/exponentially-repeated"
-    check input n = run input (Multiple n (take n (repeat input)))
-    (run,_run) = runTestAllowAmb tag lang 
+    run input n =
+      check (outcome . parseAmb lang) tag input (Right (take n (repeat input)))
     lang :: Lang Char (Gram String)
     lang = do
       tok <- token
@@ -379,4 +399,3 @@ tests = concat [
   tests13, tests14, tests15,
   []
   ]
-

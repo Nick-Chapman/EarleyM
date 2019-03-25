@@ -12,15 +12,15 @@ import Chart
 seq :: [Gram String] -> Gram String
 seq gs = do xs <- sequence gs; return ("(" ++ concat xs ++ ")")
 
+
 tests :: [IO Bool]
 tests = [
   do print (mkStaticLang lang); return True,
-  run "2+3*4" (Yes "(2+(3*4))"),
-  run "" (No 1)
+  run "2+3*4" (Right "(2+(3*4))")
   ]
   where
     tag = "earley-wiki"
-    (run,_run) = runTest tag lang 
+    run = check (outcome . parse lang) tag
     lang :: Lang Char (Gram String)
     lang = do
       sat <- satisfy

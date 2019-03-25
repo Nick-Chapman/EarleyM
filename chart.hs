@@ -3,11 +3,14 @@
 module Chart (NT,Gram,alts,fail,many,skipWhile,
               Lang, satisfy,token,symbol, declare,produce,share,fix, 
               StaticLang,mkStaticLang,
-              Config,allowAmb,rejectAmb,
-              Parsing(..),Eff(..),Partial,Outcome(..),Ambiguity(..),Pos,doParseConfig,doParse)
+
+              Pos, SyntaxError(..), Ambiguity(..), ParseError(..), Eff(..), Parsing(..),
+              parse,  parseAmb, parseT, parseAmbT
+             )
 where
 
 import Prelude hiding (exp,fail,lex)
+import Debug.Trace
 import Control.Monad(liftM, ap)
 import qualified Data.Map as Map
 import Data.Map(Map)
@@ -77,7 +80,6 @@ many = Many
 
 skipWhile :: Gram () -> Gram ()
 skipWhile p = do _ <- many p; return ()
-
 
 
 data Rule = forall a. Rule (NT a) (Gram a)
@@ -219,31 +221,57 @@ fullParseAt start pos s = not (null results)
        Nothing -> error "startChan missing"
                   
 
+newtype Eff = Eff Int deriving Show
+
+incEff :: Eff -> Eff
+incEff (Eff x) = Eff (x+1)
+
+data Parsing a = Parsing { effort :: Eff, partials :: [Partial], outcome :: a } deriving Functor
+
+
+data SyntaxError
+  = UnexpectedTokenAt Pos
+  | UnexpectedEOF Pos
+  | ExpectedEOF Pos
+  deriving (Show,Eq)
+
 data Ambiguity = Ambiguity String Pos Pos deriving (Show,Eq)
 
-data Outcome a
-  = No Pos
-  | Ambiguous Ambiguity -- when: rejectAmb
-  | Yes a
-  | Multiple Int [a] deriving (Show,Eq,Functor) -- when: allowAmb
+data ParseError
+  = SyntaxError SyntaxError
+  | AmbiguityError Ambiguity
+  deriving (Show,Eq)
 
-outcomeOfState :: Pos -> Bool -> NT a -> State -> Outcome a
-outcomeOfState pos stillLooking start s = outcome
+
+parse :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
+parse = gparse False
+
+parseT :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
+parseT = gparse True
+
+parseAmbT :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
+parseAmbT = gparseAmb True
+
+parseAmb :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
+parseAmb = gparseAmb False
+
+
+gparse :: (Show a, Show t) => Bool -> Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
+gparse doTrace lang input =
+  fmap f (ggparse rejectAmb doTrace lang input)
   where
-    outcome = case results of
-      [] ->
-        if stillLooking
-        then No (pos+1) -- run out of tokens
-        else No pos-- final token broke the parse
-      [x] -> Yes x
-      xs -> Multiple (length xs) xs
-    results = do
-      (a,p) <- elems
-      if p == pos then [a] else []
-    elems =
-      case lookChan s (start,0) of
-       Just chan -> Pipe.elems chan
-       Nothing -> error "startChan missing"
+   f (Left e) = Left e
+   f (Right []) = error "gparse, [] results not possible"
+   f (Right [x]) = Right x
+   f (Right (_:_)) = Left (AmbiguityError (Ambiguity "start" 0 (length input)))
+   
+gparseAmb :: (Show a, Show t) => Bool -> Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
+gparseAmb doTrace lang input =
+  fmap f (ggparse allowAmb doTrace lang input)
+  where
+   f (Left (SyntaxError e)) = Left e
+   f (Left (AmbiguityError _)) = error "gparseAmb, AmbiguityError not possible"
+   f (Right xs) = Right xs
 
 
 data Config = Config { allowAmbiguity :: Bool }
@@ -254,36 +282,59 @@ allowAmb = Config { allowAmbiguity = True }
 rejectAmb :: Config
 rejectAmb = Config { allowAmbiguity = False }
 
+type Outcome a = Either ParseError [a]
 
-newtype Eff = Eff Int deriving Show
-incEff :: Eff -> Eff
-incEff (Eff x) = Eff (x+1)
+data ParseRun t a = ParseRun [t] (Parsing a)
 
-data Parsing a = Parsing { effort :: Eff, partials :: [Partial], outcome :: Outcome a }
+instance (Show t, Show a) => Show (ParseRun t a) where
+  show (ParseRun input parsing) =
+    unlines [
+      "Input: " ++ show input,
+      unlines (map show (partials parsing)),
+      "Effort = " ++ show (effort parsing),
+      "Outcome = " ++ show (outcome parsing)
+      ]
 
-doParse :: (Show t, Show a) => Lang t (Gram a) -> [t] -> Parsing a
-doParse = doParseConfig allowAmb
+ggparse :: (Show a, Show t) => Config -> Bool -> Lang t (Gram a) -> [t] -> Parsing (Outcome a)
+ggparse config doTrace lang input =
+  if doTrace
+  then traceShow (ParseRun input parsing) parsing
+  else parsing
+  where
+    parsing = 
+      withNT Terminal $ \tokenNT ->
+      withNT Start $ \startNT ->
+      let (gram,rules) = runLang lang (satNT tokenNT) in
+      go config tokenNT (startNT,gram) rules input  
 
-          
-doParseConfig :: (Show t, Show a) => Config -> Lang t (Gram a) -> [t] -> Parsing a
-doParseConfig config lang input =
-  withNT Terminal $ \tokenNT ->
-  withNT Start $ \startNT ->
-  let (gram,rules) = runLang lang (satNT tokenNT) in
-  go config tokenNT (startNT,gram) rules input  
-
-go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> Parsing a
+go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> Parsing (Outcome a)
 go config token (start,gram) rules input =
   let initState = State { chans = HMap.empty } in
   let state0 = insertChan initState (start,0) Pipe.empty in
   let startItem = Item 0 start 0 gram in
   let eff0 = Eff 0 in
   case execItemsWithRules config rules eff0 [startItem] state0 of
-  (eff,partials1,Left ambiguity) -> Parsing eff partials1 (Ambiguous ambiguity)
+  (eff,partials1,Left ambiguity) -> Parsing eff partials1 (Left (AmbiguityError ambiguity))
   (eff,partials1,Right state1) ->
     let (eff1,partials2,outcome) = loop config token start rules eff 0 state1 input in
     Parsing eff1 (partials1 ++ partials2) outcome
 
+outcomeOfState :: Pos -> Bool -> NT a -> State -> Outcome a
+outcomeOfState pos stillLooking start s = outcome
+  where
+    outcome = case results of
+      [] ->
+        if stillLooking
+        then Left (SyntaxError (UnexpectedEOF (pos+1)))
+        else Left (SyntaxError (UnexpectedTokenAt pos))
+      xs -> Right xs
+    results = do
+      (a,p) <- elems
+      if p == pos then [a] else []
+    elems =
+      case lookChan s (start,0) of
+       Just chan -> Pipe.elems chan
+       Nothing -> error "startChan missing"
 
 loop :: Config -> NT t -> NT a -> [Rule] -> Eff -> Pos -> State -> [t] -> (Eff,[Partial],Outcome a)
 loop _ token start _ eff pos s [] =
@@ -295,15 +346,15 @@ loop config token start rules eff pos s (x:xs) =
   case lookChan s from of
    Nothing ->
      if fullParseAt start pos s
-     then (eff, [], No (pos+1)) -- previous token completed the parse, but doesn't want more
-     else (eff, [], No pos) -- previous token broke the parse
+     then (eff, [], Left (SyntaxError (ExpectedEOF (pos+1))))
+     else (eff, [], Left (SyntaxError (UnexpectedTokenAt pos)))
    Just chan ->
      let upto = (x,pos+1) in
      let partial = Complete from upto in -- TODO: dont bother to add partials for tokens?
      let (chan',items) = writeChan upto chan in
      let s2 = insertChan s from chan' in
      case execItemsWithRules config rules eff items s2 of
-      (eff1,partials1,Left ambiguity) -> (eff1,partials1,Ambiguous ambiguity)
+      (eff1,partials1,Left ambiguity) -> (eff1,partials1,Left (AmbiguityError ambiguity))
       (eff1,partials1,Right s3) ->
         let (eff2,partials2,outcome) = loop config token start rules eff1 (pos+1) s3 xs in
          (eff2, partial : partials1 ++ partials2, outcome)

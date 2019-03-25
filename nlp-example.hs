@@ -65,8 +65,14 @@ test =
   ]
   where
     tag = "telescope"
-    run input xs = do runW (Prelude.words input) (Multiple (length xs) xs)
-    (runW,_) = runTestParseThen allowAmb (\(Parsing _ _ o) -> fmap show o) tag lang
+    run :: String -> [String] -> IO Bool
+    run str xs =
+      check f tag input (Right xs)
+      where
+        input  = Prelude.words str
+        f = fmap (map show) . outcome . parseAmb lang
+
+
 
 tests :: [IO Bool]
 tests =  [

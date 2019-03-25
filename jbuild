@@ -4,13 +4,14 @@
   (deps ((glob_files *.hs)))
   (action "ghc -Wall -fno-warn-name-shadowing *.hs -o main.exe")))
 
-(rule 
- ((targets (main.out))
+(rule
+ ((targets (main.out main.trace))
   (deps (main.exe))
-  (action "./main.exe | tee main.out")))
+  (action "./main.exe 2> main.trace | tee main.out")))
 
 (alias 
  ((name DEFAULT) 
   (deps (main.exe
          main.out
+         main.trace
          ))))
