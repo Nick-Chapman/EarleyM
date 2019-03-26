@@ -3,3 +3,5 @@
 main.exe
 main.out
 main.trace
+haddock.out
+doc

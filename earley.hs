@@ -1,5 +1,6 @@
 {-#LANGUAGE Rank2Types, ExistentialQuantification, DeriveFunctor, GADTs #-}
 
+-- | Monadic combinators for Earley Parsing
 module Earley(NT,Gram,alts,fail,many,skipWhile,
               Lang, satisfy,token,symbol, declare,produce,share,fix, 
               StaticLang,mkStaticLang,
@@ -226,6 +227,8 @@ newtype Eff = Eff Int deriving Show
 incEff :: Eff -> Eff
 incEff (Eff x) = Eff (x+1)
 
+-- | Result of running a 'parse' function.
+-- Combines the 'a' outcome with an indication of the effort taken and the list of partial parse items (for debugging)
 data Parsing a = Parsing { effort :: Eff, partials :: [Partial], outcome :: a } deriving Functor
 
 
