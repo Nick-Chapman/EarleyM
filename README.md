@@ -13,7 +13,7 @@ with the following changes:
 
 * Lots of unit tests.
 
-* Fleshed out example of an expression language, https://github.com/Nick-Chapman/haskell-chart-parsers/blob/master/juxta-exp-example.hs including:
+* Fleshed out example of an expression language, https://github.com/Nick-Chapman/Earley/blob/master/juxta-exp-example.hs including:
     * identifiers, numbers
     * left associating binary operator
     * function application by juxtaposition
