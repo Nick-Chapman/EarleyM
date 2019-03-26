@@ -10,7 +10,7 @@ import Earley
 -- The parser recovers the original words/sentence.
 -- As well as finding some alternative sentences, which look the same when spaces are removed.
 
-genLang :: [String] -> Lang Char (Gram [String])
+genLang :: [String] -> Lang Char (Gram Char [String])
 genLang dict = do
   sym <- symbol
   let lit x = do sym x; return x
@@ -39,7 +39,7 @@ test1 = do
       "I saw them anon the hill with a telescope"
       ]
 
-    run :: Lang Char (Gram [String]) -> IO Bool
+    run :: Lang Char (Gram Char [String]) -> IO Bool
     run lang = check (outcome . parseAmb lang) tag input expected
 
 

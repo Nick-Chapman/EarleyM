@@ -42,21 +42,21 @@ instance Show (NT a) where
   show (NT name _ _) = show name
 
 
-data Gram a where
-  Ret :: a -> Gram a
-  Alts :: [Gram a] -> Gram a
-  Sat :: String -> (NT b) -> (b -> Maybe c) -> (c -> Gram a) -> Gram a
-  Many :: Gram a -> Gram [a]
-  Bind :: Gram a -> (a -> Gram b) -> Gram b
+data Gram t a where
+  Ret :: a -> Gram t a
+  Alts :: [Gram t a] -> Gram t a
+  Sat :: String -> (NT b) -> (b -> Maybe c) -> (c -> Gram t a) -> Gram t a
+  Many :: Gram t a -> Gram t [a]
+  Bind :: Gram t a -> (a -> Gram t b) -> Gram t b
          
-instance Functor Gram where fmap = liftM
-instance Applicative Gram where pure = return; (<*>) = ap
+instance Functor (Gram t) where fmap = liftM
+instance Applicative (Gram t) where pure = return; (<*>) = ap
 
-instance Monad Gram where
+instance Monad (Gram t) where
   return = Ret
   (>>=) = Bind
 
-bind :: Gram a -> (a -> Gram b) -> Gram b
+bind :: Gram t a -> (a -> Gram t b) -> Gram t b
 bind gram f = case gram of
   Ret a -> f a
   Alts gs -> Alts (do g <- gs; return (g >>= f))
@@ -64,26 +64,26 @@ bind gram f = case gram of
   Many g -> Alts [f [], do x <- g; xs <- Many g; f (x : xs)]
   Bind g f1 -> Bind g (\x -> f1 x >>= f)
 
-satNT :: NT a -> String -> (a -> Maybe b) -> Gram b
+satNT :: NT a -> String -> (a -> Maybe b) -> Gram t b
 satNT nt s p = Sat s nt p Ret
 
-referenceNT :: NT a -> Gram a
+referenceNT :: NT a -> Gram t a
 referenceNT nt = satNT nt (show nt) Just
 
-alts :: [Gram a] -> Gram a
+alts :: [Gram t a] -> Gram t a
 alts = Alts
 
-fail :: Gram a
+fail :: Gram t a
 fail = Alts []
 
-many :: Gram a -> Gram [a]
+many :: Gram t a -> Gram t [a]
 many = Many
 
-skipWhile :: Gram () -> Gram ()
+skipWhile :: Gram t () -> Gram t ()
 skipWhile p = do _ <- many p; return ()
 
 
-data Rule = forall a. Rule (NT a) (Gram a)
+data Rule = forall t a. Rule (NT a) (Gram t a)
 
 isRuleKeyedBy :: NT a -> Rule -> Bool
 isRuleKeyedBy nt1 (Rule nt2 _) =
@@ -92,7 +92,7 @@ isRuleKeyedBy nt1 (Rule nt2 _) =
   HMap.unique key1 == HMap.unique key2
 
 
-type Satisfy t = forall a. (String -> (t -> Maybe a) -> Gram a)
+type Satisfy t = forall a. (String -> (t -> Maybe a) -> Gram t a)
 data Lang t a = Lang { runLang :: Satisfy t -> (a, [Rule]) }
 
 instance Functor (Lang t) where fmap = liftM
@@ -105,15 +105,15 @@ instance Monad (Lang t) where
     let (b,ps2) = runLang (f a) t in
     (b,ps1++ps2)
 
-satisfy :: Lang t (String -> (t -> Maybe a) -> Gram a)
+satisfy :: Lang t (String -> (t -> Maybe a) -> Gram t a)
 satisfy = Lang$ \sat -> (sat,[])
 
-token :: Lang t (Gram t)
+token :: Lang t (Gram t t)
 token = do
   sat <- satisfy
   return (sat "." Just)
 
-symbol :: (Show t, Eq t) => Lang t (t -> Gram ())
+symbol :: (Show t, Eq t) => Lang t (t -> Gram t ())
 symbol = do
   sat <- satisfy
   return$ \x -> sat (show x) (\t -> if t==x then Just () else Nothing)
@@ -121,21 +121,21 @@ symbol = do
 createNamedNT :: Show a => String -> Lang t (NT a)
 createNamedNT name = Lang$ \_ -> withNT (NtName name) $ \nt -> (nt,[])
 
-declare :: Show a => String -> Lang t (NT a, Gram a)
+declare :: Show a => String -> Lang t (NT a, Gram t a)
 declare name = do
   nt <- createNamedNT name
   return (nt, referenceNT nt)
 
-produce :: NT a -> Gram a -> Lang t ()
+produce :: NT a -> Gram t a -> Lang t ()
 produce nt gram = Lang$ \_ -> ((),[Rule nt gram])
 
-share :: Show a => String -> Gram a -> Lang t (Gram a)
+share :: Show a => String -> Gram t a -> Lang t (Gram t a)
 share name gram = do
   (nt,g2) <- declare name
   produce nt gram
   return g2
   
-fix :: Show a => String -> (Gram a -> Lang t (Gram a)) -> Lang t (Gram a)
+fix :: Show a => String -> (Gram t a -> Lang t (Gram t a)) -> Lang t (Gram t a)
 fix name f = do
   (nt,gram) <- declare name
   fixed <- f gram
@@ -161,8 +161,8 @@ instance Show Partial where
     "! " ++ show name ++ "/" ++ show pos1 ++ " --> " ++ show pos2 ++ " : " ++ aShow a
 
 
-data Item -- An Earley item: A located/dotted Rule. i.e. Rule + 2 positions
-  = forall a. Item Pos (NT a) Pos (Gram a)
+-- An Earley item: A located/dotted Rule. i.e. Rule + 2 positions
+data Item = forall t a. Item Pos (NT a) Pos (Gram t a)
 
 itemOfRule :: Pos -> Rule -> Item
 itemOfRule pos (Rule nt gram) = Item pos nt pos gram
@@ -246,20 +246,20 @@ data ParseError
   deriving (Show,Eq)
 
 
-parse :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
+parse :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either ParseError a)
 parse = gparse False
 
-parseT :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
+parseT :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either ParseError a)
 parseT = gparse True
 
-parseAmbT :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
+parseAmbT :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
 parseAmbT = gparseAmb True
 
-parseAmb :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
+parseAmb :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
 parseAmb = gparseAmb False
 
 
-gparse :: (Show a, Show t) => Bool -> Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
+gparse :: (Show a, Show t) => Bool -> Lang t (Gram t a) -> [t] -> Parsing (Either ParseError a)
 gparse doTrace lang input =
   fmap f (ggparse rejectAmb doTrace lang input)
   where
@@ -268,7 +268,7 @@ gparse doTrace lang input =
    f (Right [x]) = Right x
    f (Right (_:_)) = Left (AmbiguityError (Ambiguity "start" 0 (length input)))
    
-gparseAmb :: (Show a, Show t) => Bool -> Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
+gparseAmb :: (Show a, Show t) => Bool -> Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
 gparseAmb doTrace lang input =
   fmap f (ggparse allowAmb doTrace lang input)
   where
@@ -298,7 +298,7 @@ instance (Show t, Show a) => Show (ParseRun t a) where
       "Outcome = " ++ show (outcome parsing)
       ]
 
-ggparse :: (Show a, Show t) => Config -> Bool -> Lang t (Gram a) -> [t] -> Parsing (Outcome a)
+ggparse :: (Show a, Show t) => Config -> Bool -> Lang t (Gram t a) -> [t] -> Parsing (Outcome a)
 ggparse config doTrace lang input =
   if doTrace
   then traceShow (ParseRun input parsing) parsing
@@ -310,7 +310,7 @@ ggparse config doTrace lang input =
       let (gram,rules) = runLang lang (satNT tokenNT) in
       go config tokenNT (startNT,gram) rules input  
 
-go :: Config -> NT t -> (NT a, Gram a) -> [Rule] -> [t] -> Parsing (Outcome a)
+go :: Config -> NT t -> (NT a, Gram t a) -> [Rule] -> [t] -> Parsing (Outcome a)
 go config token (start,gram) rules input =
   let initState = State { chans = HMap.empty } in
   let state0 = insertChan initState (start,0) Pipe.empty in
@@ -467,7 +467,7 @@ instance Show StaticLang where
   show (StaticLang start rules) =
     intercalate "\n" ("" : (show start ++ " where") : map show rules) ++ "\n"
                   
-mkStaticOfGram :: [StaticElem] -> Gram a -> [StaticRhs]
+mkStaticOfGram :: [StaticElem] -> Gram t a -> [StaticRhs]
 mkStaticOfGram elems gram = case gram of
   Ret _  -> [elems]
   Alts gs -> concat (map (mkStaticOfGram elems) gs)
@@ -486,7 +486,7 @@ mkStaticOfRule (Rule nt gram) = do
   es <- mkStaticOfGram [] gram
   [StaticRule (nameOfNt nt) (reverse es)]
 
-mkStaticLang :: (Show t, Show a) => Lang t (Gram a) -> StaticLang
+mkStaticLang :: (Show t, Show a) => Lang t (Gram t a) -> StaticLang
 mkStaticLang lang =
   withNT Terminal $ \tokenNT ->
   withNT Start $ \startNT ->

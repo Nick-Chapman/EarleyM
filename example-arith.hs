@@ -6,10 +6,10 @@ import Testing
 import Earley
 
 
-(-->) :: NT a -> Gram a -> Lang t ()
+(-->) :: NT a -> Gram t a -> Lang t ()
 (-->) = produce
 
-seq :: [Gram String] -> Gram String
+seq :: [Gram t String] -> Gram t String
 seq gs = do xs <- sequence gs; return ("(" ++ concat xs ++ ")")
 
 
@@ -21,7 +21,6 @@ tests = [
   where
     tag = "earley-wiki"
     run = check (outcome . parse lang) tag
-    lang :: Lang Char (Gram String)
     lang = do
       sat <- satisfy
       sym <- symbol

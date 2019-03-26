@@ -6,7 +6,7 @@ import Testing
 import Earley
 
 
-digitLang :: Lang Char (Gram Int)
+digitLang :: Lang Char (Gram Char Int)
 digitLang = do
   sat <- satisfy
   return$ sat"digit" (\c -> if Char.isDigit c then Just (digitOfChar c) else Nothing)
@@ -161,7 +161,7 @@ tests6 = [
     tag = "zeroG"
     run = check (countAmb . outcome . parseAmb lang) tag
     lang = do
-      return (do (fail :: Gram Int))
+      return (do (fail :: Gram Char Int))
 
 
 tests7 :: [IO Bool]
@@ -314,7 +314,6 @@ tests13 = [
   where
     tag = "everything"
     run input = check (outcome . parse lang) tag input (Right input)
-    lang :: Lang Char (Gram String)
     lang = do
       tok <- token
       fix"L" $ \list -> return $ alts [
@@ -333,7 +332,6 @@ tests14 = [
   where
     tag = "everything/read-pipe-existing-elems"
     run input = check (outcome . parse lang) tag input (Right input)
-    lang :: Lang Char (Gram String)
     lang = do
       tok <- token
       fix"L" $ \list -> return $ alts [-- 2 alts reversed
@@ -353,7 +351,6 @@ tests15 = [
     tag = "everything/exponentially-repeated"
     run input n =
       check (outcome . parseAmb lang) tag input (Right (take n (repeat input)))
-    lang :: Lang Char (Gram String)
     lang = do
       tok <- token
       fix"L" $ \list -> return $ alts [
@@ -361,7 +358,6 @@ tests15 = [
         return [],
         do xs <- list; x <- tok; return (xs++[x])
         ]
-
 
 
 tests :: [IO Bool]

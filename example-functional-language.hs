@@ -24,7 +24,7 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
     Lam s body -> "(\\" ++ s ++ "." ++ show body ++ ")"
     Add e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
 
-lang :: Lang Char (Gram Exp)
+lang :: Lang Char (Gram Char Exp)
 lang = do
   sym <- symbol
   sat0 <- satisfy
