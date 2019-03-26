@@ -25,8 +25,7 @@ tests = [
     seq g1 g2 = do x1 <- g1; x2 <- g2; return$ "("++x1++x2++")"
     
     lang = do
-      tok <- token
-      let x = do c <- tok; return [c]
+      let x = do c <- token; return [c]
       fix"cat" $ \c -> return $ alts [
         seq x x,
         seq x c,

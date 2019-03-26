@@ -6,10 +6,9 @@ import Testing
 import Earley
 
 
-digitLang :: Lang Char (Gram Char Int)
-digitLang = do
-  sat <- satisfy
-  return$ sat"digit" (\c -> if Char.isDigit c then Just (digitOfChar c) else Nothing)
+digit :: Gram Char Int
+digit =
+  do c <- token; if Char.isDigit c then return (digitOfChar c) else fail
   where
     digitOfChar :: Char -> Int
     digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
@@ -41,7 +40,6 @@ tests1 = [
     tag = "2dig"
     run = check (outcome . parse lang) tag
     lang = do
-      digit <- digitLang
       return $ do
         d1 <- digit
         d2 <- digit
@@ -63,7 +61,6 @@ tests2 = [
     tag = "num"
     run = check (outcome . parse lang) tag
     lang = do
-      digit <- digitLang
       fix"N" $ \num -> return$ alts [
         digit,
         do
@@ -100,12 +97,10 @@ tests3 = [
     tag = "expD"
     run = check (outcome . parse lang) tag
     lang = do
-      digit <- digitLang
-      sym <- symbol
       fix"E" $ \exp -> return $ alts [
         do d <- digit; return (Leaf d),
-        do e1 <- exp; sym '+' ; e2 <- exp; return (Add e1 e2),
-        do sym '(' ; e <- exp; sym ')'; return e
+        do e1 <- exp; symbol '+' ; e2 <- exp; return (Add e1 e2),
+        do symbol '(' ; e <- exp; symbol ')'; return e
         ]
 
 
@@ -131,16 +126,14 @@ tests4 = [
     tag = "expN"
     run = check (outcome . parse lang) tag
     lang = do
-      digit <- digitLang
-      sym <- symbol
       num <- fix"N" $ \num -> return $ alts [
         digit,
         do n <- num; d <- digit; return (10 * n + d)
         ]
       exp <- fix"E" $ \exp -> return $ alts [
         do d <- num; return (Leaf d),
-        do e1 <- exp; sym '+' ; e2 <- exp; return (Add e1 e2),
-        do sym '(' ; e <- exp; sym ')'; return e
+        do e1 <- exp; symbol '+' ; e2 <- exp; return (Add e1 e2),
+        do symbol '(' ; e <- exp; symbol ')'; return e
         ]
       return exp
 
@@ -197,8 +190,7 @@ tests8 = [
     -- LINEAR
     run = check (unEff . effort . parse lang) tag
     lang = do
-      tok <- token
-      let x = do _ <- tok; return ()
+      let x = do _ <- token; return ()
       fix"L" $ \xs -> return $ alts [x, do xs; x]
 
 
@@ -215,8 +207,7 @@ tests9 = [
     -- QUADRATIC -- expected.
     run = check (unEff . effort . parse lang) tag
     lang = do
-      tok <- token
-      let x = do _ <- tok; return ()
+      let x = do _ <- token; return ()
       fix"R" $ \xs -> return $ alts [x, do x; xs]
 
 
@@ -233,10 +224,8 @@ tests10 = [
     -- LINEAR
     run = check (unEff . effort . parse lang) tag
     lang = do
-      tok <- token
-      sym <- symbol
-      let x = do _ <- tok; return ()
-      fix"R" $ \xs -> return $ alts [sym '.', do x; xs]
+      let x = do _ <- token; return ()
+      fix"R" $ \xs -> return $ alts [symbol '.', do x; xs]
 
 
 tests11 :: [IO Bool]
@@ -251,8 +240,7 @@ tests11 = [
     -- LINEAR -- Even when we measure the internal steps. Still kind of suprised.
     run = check (unEff . effort . parse lang) tag
     lang = do
-      tok <- token
-      let x = do _ <- tok; return ()
+      let x = do _ <- token; return ()
       return$ do
         x; _ <- many x; return ()
 
@@ -294,12 +282,10 @@ tests12 = [
     measure parsing = (unEff (effort parsing), countAmb (outcome parsing))
     
     lang = do
-      tok <- token
-      let x = do _ <- tok; return ()
+      let x = do _ <- token; return ()
       xs <- fix"L" $ \xs -> return $ alts [x, do xs; x]
-      sym <- symbol
       return$ do
-        xs; sym ';'; xs
+        xs; symbol ';'; xs
 
 
 
@@ -315,9 +301,8 @@ tests13 = [
     tag = "everything"
     run input = check (outcome . parse lang) tag input (Right input)
     lang = do
-      tok <- token
       fix"L" $ \list -> return $ alts [
-        do xs <- list; x <- tok; return (xs++[x]),
+        do xs <- list; x <- token; return (xs++[x]),
         return []
         ]
 
@@ -333,10 +318,9 @@ tests14 = [
     tag = "everything/read-pipe-existing-elems"
     run input = check (outcome . parse lang) tag input (Right input)
     lang = do
-      tok <- token
       fix"L" $ \list -> return $ alts [-- 2 alts reversed
         return [],
-        do xs <- list; x <- tok; return (xs++[x])
+        do xs <- list; x <- token; return (xs++[x])
         ]
 
 
@@ -352,11 +336,10 @@ tests15 = [
     run input n =
       check (outcome . parseAmb lang) tag input (Right (take n (repeat input)))
     lang = do
-      tok <- token
       fix"L" $ \list -> return $ alts [
-        do xs <- list; x <- tok; return (xs++[x]),
+        do xs <- list; x <- token; return (xs++[x]),
         return [],
-        do xs <- list; x <- tok; return (xs++[x])
+        do xs <- list; x <- token; return (xs++[x])
         ]
 
 

@@ -40,17 +40,16 @@ lang = do
 
 lex :: String -> [String] -> Lang String (Gram String Tree)
 lex name ws = do
-  sat <- satisfy
   share name $
     alts (map (\w -> do
-                  sat (show w) (\w' -> if w==w' then Just () else Nothing)
-                  return (Word w)
+                  w' <- token
+                  if w==w' then return (Word w) else fail
               ) ws)
 
 seq :: [Gram t Tree] -> Gram t Tree
 seq = fmap Phrase . sequence
 
-(-->) :: NT a -> Gram t a -> Lang t ()
+(-->) :: NT t a -> Gram t a -> Lang t ()
 (-->) = produce
 
 
@@ -75,7 +74,4 @@ test =
 
 
 tests :: [IO Bool]
-tests =  [
-  do print (mkStaticLang lang); return True,
-  test
-  ]
+tests =  [test]

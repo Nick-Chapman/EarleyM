@@ -12,8 +12,7 @@ import Earley
 
 genLang :: [String] -> Lang Char (Gram Char [String])
 genLang dict = do
-  sym <- symbol
-  let lit x = do sym x; return x
+  let lit x = do symbol x; return x
   let word0 = alts (map (sequence . map lit) dict)
   (word',word) <- declare"WORD"; produce word' word0 -- It's much slower if we dont make a non-terminal
   fix "words"$ \words -> return$ alts [

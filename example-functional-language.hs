@@ -26,13 +26,11 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
 
 lang :: Lang Char (Gram Char Exp)
 lang = do
-  sym <- symbol
-  sat0 <- satisfy
-  let sat name pred = sat0 name $ \c -> if pred c then Just c else Nothing
-  let alpha = sat "alpha" Char.isAlpha
-  let numer = sat "numer" Char.isDigit
+  let sat pred = do c <- token; if pred c then return c else fail
+  let alpha = sat Char.isAlpha
+  let numer = sat Char.isDigit
   let digit = do c <- numer; return (digitOfChar c)
-  let white = do _ <- sat "white" Char.isSpace; return ()
+  let white = do _ <- sat Char.isSpace; return ()
   digits <- fix"digits" $ \digits -> return $ alts [
     do n <- digits; d <- digit; return (10 * n + d),
     digit
@@ -42,9 +40,9 @@ lang = do
   let required_ws = do white; ws
   let var = do s <- ident; return (Var s)
   let num = do n <- digits; return (Num n)
-  let parenthesized thing = do sym '('; ws; x <- thing; ws; sym ')'; return x
+  let parenthesized thing = do symbol '('; ws; x <- thing; ws; symbol ')'; return x
   let lambdarized exp = do
-        xs <- many (do sym '\\'; ws; x <- ident; ws; sym '.'; ws; return x)
+        xs <- many (do symbol '\\'; ws; x <- ident; ws; symbol '.'; ws; return x)
         e <- exp
         return$ foldr Lam e xs
   exp <- fix"exp" $ \exp -> do
@@ -67,7 +65,7 @@ lang = do
     let application = alts [appO,appC]
     let addition = alts [
           application,
-          do a <- exp; ws; sym '+'; ws; b <- exp; return (Add a b) -- grammar is deliberately ambiguous here
+          do a <- exp; ws; symbol '+'; ws; b <- exp; return (Add a b) -- grammar is deliberately ambiguous here
           ]
     return addition
   let start = do ws; e <- lambdarized exp; ws; return e
@@ -232,7 +230,6 @@ tests2 = [
 
 tests :: [IO Bool]
 tests = concat [
-  [do print (mkStaticLang lang); return True],
   tests1,
   tests2,
   []

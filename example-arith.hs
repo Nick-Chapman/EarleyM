@@ -1,12 +1,12 @@
 module Example.Arith(tests) where
 
-import Prelude hiding (seq)
+import Prelude hiding (seq,fail)
 import qualified Data.Char as Char
 import Testing
 import Earley
 
 
-(-->) :: NT a -> Gram t a -> Lang t ()
+(-->) :: NT t a -> Gram t a -> Lang t ()
 (-->) = produce
 
 seq :: [Gram t String] -> Gram t String
@@ -15,18 +15,15 @@ seq gs = do xs <- sequence gs; return ("(" ++ concat xs ++ ")")
 
 tests :: [IO Bool]
 tests = [
-  do print (mkStaticLang lang); return True,
   run "2+3*4" (Right "(2+(3*4))")
   ]
   where
     tag = "earley-wiki"
     run = check (outcome . parse lang) tag
     lang = do
-      sat <- satisfy
-      sym <- symbol
 
-      let dig = sat"dig" $ \c -> if Char.isDigit c then Just [c] else Nothing
-      let lit x = do sym x; return [x]
+      let dig = do c <- token; if Char.isDigit c then return [c] else fail
+      let lit x = do symbol x; return [x]
       
       (s',s) <- declare"S"
       (m',m) <- declare"M"
