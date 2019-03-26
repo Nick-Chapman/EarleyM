@@ -7,7 +7,7 @@
 (rule
  ((targets (haddock.out))
   (deps ((glob_files *.hs)))
-  (action "rm -rf doc; haddock --html -o doc earley.hs pipe.hs > haddock.out")))
+  (action "rm -rf doc; haddock --html earley.hs pipe.hs  -o /tmp/earley > haddock.out")))
 
 (rule
  ((targets (main.out main.trace))
