@@ -1,6 +1,6 @@
-# haskell-chart-parsers
+# Earley Parsing with Monadic Combinators
 
-Haskell implementation of Monadic-style combinators for chart parsing.
+Haskell implementation of Monadic-style combinators for Earley Parsing.
 
 These combinators support left-recursive and ambiguous grammars, but provide a standard monadic parser interface.
 This implementation re-works an earlier Ocaml implementation:
