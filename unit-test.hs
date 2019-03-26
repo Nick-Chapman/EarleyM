@@ -1,4 +1,4 @@
-module BasicExamples(tests) where
+module UnitTest(tests) where
 
 import Prelude hiding (fail,exp,seq)
 import qualified Data.Char as Char
@@ -150,30 +150,6 @@ tests4 = [
 countAmb :: Either e [a] -> Int
 countAmb (Left _) = 0
 countAmb (Right xs) = length xs
-    
-tests5 :: [IO Bool]
-tests5 = [
-  run "" 0,
-  run "a" 0,
-  run "ab" 1,
-  run "abc" 2,
-  run "abcd" 5,
-  run "abcde" 14,
-  run "abcdef" 42
-  ]
-  where
-    tag = "catalan"
-    run = check (countAmb . outcome . parseAmb lang) tag
-    seq g1 g2 = do x1 <- g1; x2 <- g2; return$ "("++x1++x2++")"
-    lang = do
-      tok <- token
-      let x = do c <- tok; return [c]
-      fix"cat" $ \c -> return $ alts [
-        seq x x,
-        seq x c,
-        seq c x,
-        seq c c
-        ]
 
 tests6 :: [IO Bool]
 tests6 = [
@@ -392,7 +368,6 @@ tests :: [IO Bool]
 tests = concat [
   tests1, tests2,
   tests3, tests4,
-  tests5,
   tests6, tests7,
   tests8, tests9, tests10, tests11,
   tests12,

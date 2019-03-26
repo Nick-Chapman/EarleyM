@@ -1,17 +1,19 @@
 module Main(main) where
 
 import Testing
-import BasicExamples
-import JuxtaExpExample
-import EarlyWikiExample
-import NlpExample
-import LostWhitespaceExample
+import UnitTest
+import Example.Arith
+import Example.PrepositionalAttachmentAmbiguity
+import Example.Catalan
+import Example.FunctionalLanguage
+import Example.DictionaryLexing
 
 main :: IO ()
 main = runAll (concat [
-                  BasicExamples.tests,
-                  EarlyWikiExample.tests,
-                  JuxtaExpExample.tests,
-                  NlpExample.tests,
-                  [LostWhitespaceExample.test], -- takes a few seconds
+                  UnitTest.tests,
+                  Example.Arith.tests,
+                  Example.Catalan.tests,
+                  Example.FunctionalLanguage.tests,
+                  Example.PrepositionalAttachmentAmbiguity.tests,
+                  Example.DictionaryLexing.tests, -- takes a few seconds
                   []])

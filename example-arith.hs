@@ -1,6 +1,6 @@
-module EarlyWikiExample(tests) where
+module Example.Arith(tests) where
 
-import Prelude hiding (fail,exp,seq,lex)
+import Prelude hiding (seq)
 import qualified Data.Char as Char
 import Testing
 import Earley

@@ -1,13 +1,14 @@
-module LostWhitespaceExample(test) where
+module Example.DictionaryLexing(tests) where
 
-import Prelude hiding (fail)
 import qualified Data.Char as Char
 import Testing
 import Earley
 
--- This example constructs a very large grammar (from a dictionary), which is used to lex a sentence,
--- which has had it's interword whitespace removed, back into the original words, 
--- and also finds some alternative original sentences.
+-- This example constructs a very large grammar (from a dictionary), which is used to lex a sentence.
+-- The sentence has had it's interword whitespace removed.
+
+-- The parser recovers the original words/sentence.
+-- As well as finding some alternative sentences, which look the same when spaces are removed.
 
 genLang :: [String] -> Lang Char (Gram [String])
 genLang dict = do
@@ -20,11 +21,12 @@ genLang dict = do
     do ws <- words; w <- word; return (ws++[w])
     ]
 
-test :: IO Bool
-test = do
+test1 :: IO Bool
+test1 = do
   contents <- readFile "/usr/share/dict/cracklib-small"
   let dict = ["a","I","on"] ++ filter ((> 2) . length) (Prelude.lines contents)
   run (genLang dict)
+
   where
     tag = "lost-whitespace"
 
@@ -39,3 +41,7 @@ test = do
 
     run :: Lang Char (Gram [String]) -> IO Bool
     run lang = check (outcome . parseAmb lang) tag input expected
+
+
+tests :: [IO Bool]
+tests = [test1]

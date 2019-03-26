@@ -1,4 +1,4 @@
-module NlpExample(tests) where
+module Example.PrepositionalAttachmentAmbiguity(tests) where
 
 -- Prepositional phrase attachment ambiguity example. See:
 -- https://allthingslinguistic.com/post/52411342274/how-many-meanings-can-you-get-for-the-sentence-i

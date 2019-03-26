@@ -1,4 +1,4 @@
-module JuxtaExpExample(tests) where
+module Example.FunctionalLanguage(tests) where
 
 import Prelude hiding (fail,exp)
 import qualified Data.Char as Char
