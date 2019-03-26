@@ -3,7 +3,7 @@ module BasicExamples(tests) where
 import Prelude hiding (fail,exp,seq)
 import qualified Data.Char as Char
 import Testing
-import Chart
+import Earley
 
 
 digitLang :: Lang Char (Gram Int)

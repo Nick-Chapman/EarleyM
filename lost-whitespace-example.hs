@@ -3,7 +3,7 @@ module LostWhitespaceExample(test) where
 import Prelude hiding (fail)
 import qualified Data.Char as Char
 import Testing
-import Chart
+import Earley
 
 -- This example constructs a very large grammar (from a dictionary), which is used to lex a sentence,
 -- which has had it's interword whitespace removed, back into the original words, 

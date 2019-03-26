@@ -5,7 +5,7 @@ module NlpExample(tests) where
 
 import Prelude hiding (fail,exp,seq,lex)
 import Testing
-import Chart
+import Earley
 import Data.List
 
 data Tree = Word String | Phrase [Tree] deriving (Eq)

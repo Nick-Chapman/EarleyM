@@ -3,7 +3,7 @@ module EarlyWikiExample(tests) where
 import Prelude hiding (fail,exp,seq,lex)
 import qualified Data.Char as Char
 import Testing
-import Chart
+import Earley
 
 
 (-->) :: NT a -> Gram a -> Lang t ()

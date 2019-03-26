@@ -1,6 +1,6 @@
 {-#LANGUAGE Rank2Types, ExistentialQuantification, DeriveFunctor, GADTs #-}
 
-module Chart (NT,Gram,alts,fail,many,skipWhile,
+module Earley(NT,Gram,alts,fail,many,skipWhile,
               Lang, satisfy,token,symbol, declare,produce,share,fix, 
               StaticLang,mkStaticLang,
 
