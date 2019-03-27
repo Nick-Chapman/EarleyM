@@ -1,14 +1,15 @@
 {-#LANGUAGE ScopedTypeVariables,ExistentialQuantification,GADTs,RankNTypes,DeriveFunctor#-}
 
 -- | Monadic combinators for Earley Parsing
-module Earley (
+module EarleyTracing (
   Gram,token,symbol,alts,fail,many,skipWhile, 
   Lang,NT,declare,produce,share,fix, 
-  Parsing(..),parse,parseAmb,
+  Parsing(..),parse,parseAmb,parseT,parseAmbT,
   SyntaxError(..),Ambiguity(..),ParseError(..),Pos,Eff(..)
   ) where
 
 import Prelude hiding (exp,fail,lex)
+import Debug.Trace
 import Control.Monad(liftM, ap)
 import qualified Data.Map as Map
 import Data.Map(Map)
@@ -123,24 +124,28 @@ fix name f = do
   return gram
 
 
-newtype Eff = Eff Int deriving Show
-
-incEff :: Eff -> Eff
-incEff (Eff x) = Eff (x+1)
-
 type Pos = Int
 type From t a = (NT t a, Pos)
 type Upto a = (a, Pos)
 
+data Partial
+  = forall t a. Predict (From t a)
+  | forall t a. Complete (From t a) (Upto a)
+
+instance Show Partial where
+  show (Predict (NT name _ _,pos1)) =
+    "? " ++ show name ++ "/" ++ show pos1
+  show (Complete (NT name aShow _,pos1) (a,pos2)) =
+    "! " ++ show name ++ "/" ++ show pos1 ++ " --> " ++ show pos2 ++ " : " ++ aShow a
+
 -- An Earley item: A located/dotted Rule. i.e. Rule + 2 positions
 data Item t = forall a. Item Pos (NT t a) Pos (Gram t a)
 
-type Chan t a = Pipe (Upto a) (Item t)
-data State = State { chans :: HMap, effortState :: Eff }
-type StateValue t a = Map Pos (Chan t a)
 
-incEffortState :: State -> State
-incEffortState s = s { effortState = incEff (effortState s) }
+type Chan t a = Pipe (Upto a) (Item t)
+
+data State = State { chans :: HMap }
+type StateValue t a = Map Pos (Chan t a)
 
 existsChan :: State -> From t a -> Bool
 existsChan s (nt,pos) =
@@ -173,11 +178,17 @@ fullParseAt start pos s = not (null results)
       case lookChan s (start,0) of
        Just chan -> Pipe.elems chan
        Nothing -> error "startChan missing"
+                  
 
+newtype Eff = Eff Int deriving Show
+
+incEff :: Eff -> Eff
+incEff (Eff x) = Eff (x+1)
 
 -- | Result of running a 'parse' function.
--- Combines the 'a' outcome with an indication of the effort taken
-data Parsing a = Parsing { effort :: Eff, outcome :: a } deriving Functor
+-- Combines the 'a' outcome with an indication of the effort taken and the list of partial parse items (for debugging)
+data Parsing a = Parsing { effort :: Eff, partials :: [Partial], outcome :: a } deriving Functor
+
 
 data SyntaxError
   = UnexpectedTokenAt Pos
@@ -192,18 +203,32 @@ data ParseError
   | AmbiguityError Ambiguity
   deriving (Show,Eq)
 
+
 parse :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either ParseError a)
-parse lang input =
-  fmap f (ggparse rejectAmb lang input)
+parse = gparse False
+
+parseT :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either ParseError a)
+parseT = gparse True
+
+parseAmbT :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
+parseAmbT = gparseAmb True
+
+parseAmb :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
+parseAmb = gparseAmb False
+
+
+gparse :: (Show a, Show t) => Bool -> Lang t (Gram t a) -> [t] -> Parsing (Either ParseError a)
+gparse doTrace lang input =
+  fmap f (ggparse rejectAmb doTrace lang input)
   where
    f (Left e) = Left e
    f (Right []) = error "gparse, [] results not possible"
    f (Right [x]) = Right x
    f (Right (_:_)) = Left (AmbiguityError (Ambiguity "start" 0 (length input)))
    
-parseAmb :: (Show a, Show t) => Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
-parseAmb lang input =
-  fmap f (ggparse allowAmb lang input)
+gparseAmb :: (Show a, Show t) => Bool -> Lang t (Gram t a) -> [t] -> Parsing (Either SyntaxError [a])
+gparseAmb doTrace lang input =
+  fmap f (ggparse allowAmb doTrace lang input)
   where
    f (Left (SyntaxError e)) = Left e
    f (Left (AmbiguityError _)) = error "gparseAmb, AmbiguityError not possible"
@@ -220,9 +245,22 @@ rejectAmb = Config { allowAmbiguity = False }
 
 type Outcome a = Either ParseError [a]
 
-ggparse :: (Show a, Show t) => Config -> Lang t (Gram t a) -> [t] -> Parsing (Outcome a)
-ggparse config lang input =
-  parsing
+data ParseRun t a = ParseRun [t] (Parsing a)
+
+instance (Show t, Show a) => Show (ParseRun t a) where
+  show (ParseRun input parsing) =
+    unlines [
+      "Input: " ++ show input,
+      unlines (map show (partials parsing)),
+      "Effort = " ++ show (effort parsing),
+      "Outcome = " ++ show (outcome parsing)
+      ]
+
+ggparse :: (Show a, Show t) => Config -> Bool -> Lang t (Gram t a) -> [t] -> Parsing (Outcome a)
+ggparse config doTrace lang input =
+  if doTrace
+  then traceShow (ParseRun input parsing) parsing
+  else parsing
   where
     parsing = 
       withNT Token $ \tokenNT ->
@@ -232,53 +270,59 @@ ggparse config lang input =
 
 go :: Config -> NT t t -> (NT t a, Gram t a) -> [Rule t] -> [t] -> Parsing (Outcome a)
 go config tokenNT (startNT,gram) rules input =
-  let initState = State { chans = HMap.empty, effortState = Eff 0 } in
+  let initState = State { chans = HMap.empty } in
   let state0 = insertChan initState (startNT,0) Pipe.empty in
   let startItem = Item 0 startNT 0 gram in
-  let (state1,optAmb) = execItemsWithRules config tokenNT rules [startItem] state0 in
-  case optAmb of
-  Just ambiguity ->
-    Parsing (effortState state1) (Left (AmbiguityError ambiguity))
+  let eff0 = Eff 0 in
+  case execItemsWithRules config tokenNT rules eff0 [startItem] state0 of
+  (eff,partials1,Left ambiguity) -> Parsing eff partials1 (Left (AmbiguityError ambiguity))
+  (eff,partials1,Right state1) ->
+    let (eff1,partials2,outcome) = loop config tokenNT startNT rules eff 0 state1 input in
+    Parsing eff1 (partials1 ++ partials2) outcome
 
-  Nothing ->
-    let (s,outcome) = loop config tokenNT startNT rules 0 state1 input in
-    Parsing (effortState s) outcome
+outcomeOfState :: Pos -> Bool -> NT t a -> State -> Outcome a
+outcomeOfState pos stillLooking start s = outcome
+  where
+    outcome = case results of
+      [] ->
+        if stillLooking
+        then Left (SyntaxError (UnexpectedEOF (pos+1)))
+        else Left (SyntaxError (UnexpectedTokenAt pos))
+      xs -> Right xs
+    results = do
+      (a,p) <- elems
+      if p == pos then [a] else []
+    elems =
+      case lookChan s (start,0) of
+       Just chan -> Pipe.elems chan
+       Nothing -> error "startChan missing"
 
-loop :: Config -> NT t t -> NT t a -> [Rule t] -> Pos -> State -> [t] -> (State,Outcome a)
-loop config tokenNT startNT rules pos s xs = case xs of
-  [] ->
-    case lookChan s (startNT,0) of
-     Nothing -> error "startChan missing"
-     Just chan -> do
-       let results = do (a,p) <- Pipe.elems chan; if p == pos then [a] else []
-       case results of
-        [] ->
-          let stillLooking = existsChan s (tokenNT,pos) in
-          if stillLooking
-          then (s, Left (SyntaxError (UnexpectedEOF (pos+1))))
-          else (s, Left (SyntaxError (UnexpectedTokenAt pos)))
-        xs ->
-          (s, Right xs)
-        
-  x:xs ->
-    let from = (tokenNT,pos) in
-    case lookChan s from of
-    Nothing ->
-      if fullParseAt startNT pos s
-      then (s, Left (SyntaxError (ExpectedEOF (pos+1))))
-      else (s, Left (SyntaxError (UnexpectedTokenAt pos)))
-    Just chan ->
-      let upto = (x,pos+1) in
-      let (chan',items) = Pipe.write upto chan in
-      let s2 = insertChan s from chan' in
-      let (s3,optAmb) = execItemsWithRules config tokenNT rules items s2 in
-      case optAmb of
-       Just ambiguity -> (s, Left (AmbiguityError ambiguity))
-       Nothing -> loop config tokenNT startNT rules (pos+1) s3 xs
+loop :: Config -> NT t t -> NT t a -> [Rule t] -> Eff -> Pos -> State -> [t] -> (Eff,[Partial],Outcome a)
+loop _ tokenNT startNT _ eff pos s [] =
+  (eff, [], outcomeOfState pos stillLooking startNT s)
+  where
+    stillLooking = existsChan s (tokenNT,pos)
+loop config tokenNT startNT rules eff pos s (x:xs) =
+  let from = (tokenNT,pos) in
+  case lookChan s from of
+   Nothing ->
+     if fullParseAt startNT pos s
+     then (eff, [], Left (SyntaxError (ExpectedEOF (pos+1))))
+     else (eff, [], Left (SyntaxError (UnexpectedTokenAt pos)))
+   Just chan ->
+     let upto = (x,pos+1) in
+     let partials0 = [Complete from upto] in
+     let (chan',items) = Pipe.write upto chan in
+     let s2 = insertChan s from chan' in
+     case execItemsWithRules config tokenNT rules eff items s2 of
+      (eff1,partials1,Left ambiguity) -> (eff1,partials1,Left (AmbiguityError ambiguity))
+      (eff1,partials1,Right s3) ->
+        let (eff2,partials2,outcome) = loop config tokenNT startNT rules eff1 (pos+1) s3 xs in
+         (eff2, partials0 ++ partials1 ++ partials2, outcome)
 
 
-execItemsWithRules :: forall t. Config -> NT t t -> [Rule t] -> [Item t] -> State -> (State, Maybe Ambiguity)
-execItemsWithRules config tokenNT rules items state = execItems items state
+execItemsWithRules :: forall t. Config -> NT t t -> [Rule t] -> Eff -> [Item t] -> State -> (Eff,[Partial],Either Ambiguity (State))
+execItemsWithRules config tokenNT rules eff items state = execItems eff items state
   where
 
     findRules :: NT t a -> [Rule t]
@@ -286,32 +330,39 @@ execItemsWithRules config tokenNT rules items state = execItems items state
       rule <- rules
       if isRuleKeyedBy nt rule then return rule else []
 
-    execItems :: [Item t] -> State -> (State, Maybe Ambiguity)
-    execItems [] s = (s, Nothing)
-    execItems (Item p1 nt p2 gram : items) s = case gram of
-      Alts gs -> do
-        let items1 = do g <- gs; return (Item p1 nt p2 g)
-        execItems (items1 ++ items) s
+    execItems :: Eff -> [Item t] -> State -> (Eff,[Partial],Either Ambiguity (State))
+    execItems eff [] s = (eff,[],Right s)
+    execItems eff (Item p1 nt p2 gram : items) s = case gram of
+      Alts gs -> execItems eff ((do g <- gs; return (Item p1 nt p2 g)) ++ items) s
 
-      Ret a -> do
-        let from = (nt,p1)
-        let upto = (a,p2)
+      Ret a ->
         case produceState s from upto of
-         Left ambiguity -> (s, Just ambiguity)
+         Left ambiguity -> (eff,partials,Left ambiguity)
          Right (s1,items1) ->
-           execItems (items1 ++ items) (incEffortState s1)
+           push partials (execItems (incEff eff) (items1 ++ items) s1)
+        where
+          partials = [Complete from upto]
+          from = (nt,p1)
+          upto = (a,p2)
 
-      GetToken kT -> do
-        let from = (tokenNT,p2)
-        let reader (t,p3) = Item p1 nt p3 (kT t)
-        let (s1,items1) = awaitState s from reader 
-        execItems (items1 ++ items) (incEffortState s1)
+      GetToken kT -> 
+        push (partials1) (execItems (incEff eff) (items1 ++ items) s1)
+        where
+          (partials1,s1,items1) = awaitState s from reader 
+          from = (tokenNT,p2)
+          reader (t,p3) = (Item p1 nt p3 nextG)
+            where nextG = kT t
 
-      GetNT ntB kB -> do
-        let from = (ntB,p2)
-        let reader (b,p3) = Item p1 nt p3 (kB b)
-        let (s1,items1) = awaitState s from reader
-        execItems  (items1 ++ items) (incEffortState s1)
+      GetNT ntB kB ->
+        push (partials1) (execItems (incEff eff) (items1 ++ items) s1)
+        where
+          (partials1,s1,items1) = awaitState s from reader 
+          from = (ntB,p2)
+          reader (b,p3) = (Item p1 nt p3 nextG)
+            where nextG = kB b
+
+      where
+        push ps1 (eff,ps2,s) = (eff,ps1++ps2,s)
 
 
     produceState :: State -> From t a -> Upto a -> Either Ambiguity (State, [Item t])
@@ -326,30 +377,31 @@ execItemsWithRules config tokenNT rules items state = execItems items state
              Right (insertChan s from chan', items)
          else
            case writeChanNoAmb upto chan of
-           Nothing -> do
-             let (nt,p1) = from
-             let (_,p2) = upto
-             Left (Ambiguity (show nt) p1 p2)
+           Nothing -> Left (Ambiguity (show nt) p1 p2)
+             where (nt,p1) = from
+                   (_,p2) = upto
            
            Just (chan',items) ->         
              Right (insertChan s from chan', items)
 
     writeChanNoAmb :: Upto a -> Chan t a -> Maybe (Chan t a, [Item t])
-    writeChanNoAmb upto chan = do
-      let (_,pos) = upto
-      let amb = or$ do (_,p) <- Pipe.elems chan; return (p == pos)
+    writeChanNoAmb upto chan =
       if amb then Nothing else Just (Pipe.write upto chan)
+      where
+        amb = or$ do (_,p) <- Pipe.elems chan; return (p == pos)
+        (_,pos) = upto
 
-    awaitState :: State -> From t a -> (Upto a -> Item t) -> (State, [Item t])
+
+    awaitState :: State -> From t a -> (Upto a -> Item t) -> ([Partial], State, [Item t])
     awaitState s from reader =
       case lookChan s from of
-       Nothing -> do
-         let chan = Pipe.firstRead reader
-         let items = predict from
-         (insertChan s from chan, items)               
-       Just chan -> do
-         let (chan',items) = Pipe.read reader chan
-         (insertChan s from chan', items)
+       Nothing -> (partials, insertChan s from chan, items)
+         where chan = Pipe.firstRead reader
+               items = predict from
+               partials = [Predict from]
+       Just chan ->
+         ([], insertChan s from chan', items)
+         where (chan',items) = Pipe.read reader chan
 
     predict :: From t a -> [Item t]
     predict (nt,pos) = do
