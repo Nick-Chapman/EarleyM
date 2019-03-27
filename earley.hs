@@ -17,26 +17,27 @@ import Data.HMap(HKey,HMap)
 import qualified Pipe
 import Pipe(Pipe)
 
-data NtName = NtName String | Start | Token deriving Eq
-instance Show NtName where
-  show (NtName s) = s
-  show Start = "<start>"
-  show Token = "<token>"
+data NT t a = forall x. NT String (HKey x (StateValue t a)) -- TODO: add 2nd key into rules
 
-data NT t a = forall x. NT NtName (a -> String) (HKey x (StateValue t a)) -- TODO: add 2nd key into rules
+withNT :: String -> (NT t a -> b) -> b
+withNT name k = HMap.withKey $ \key -> k (NT name key)
 
-withNT :: Show a => NtName -> (NT t a -> b) -> b
-withNT name k = HMap.withKey $ \key -> k (NT name show key)
+createNT :: String -> NT t a
+createNT name = withNT name id
+
+tokenNT :: NT t a
+tokenNT = createNT "<token>"
+
+startNT :: NT t a
+startNT = createNT "<start>"
 
 withKeyOfNT :: NT t a -> (forall x. HKey x (StateValue t a) -> b) -> b
-withKeyOfNT (NT _ _ key) k = k key
+withKeyOfNT (NT _ key) k = k key
 
 instance Show (NT t a) where
-  show (NT name _ _) = show name
-
+  show (NT name _) = name
 
 data Gram t a where
-  GetToken :: (t -> Gram t a) -> Gram t a
   Ret :: a -> Gram t a
   Alts :: [Gram t a] -> Gram t a
   GetNT :: (NT t b) -> (b -> Gram t a) -> Gram t a
@@ -50,13 +51,13 @@ instance Monad (Gram t) where
 
 bind :: Gram t a -> (a -> Gram t b) -> Gram t b
 bind gram f = case gram of
-  GetToken k -> GetToken (\t -> k t >>= f)
   Ret a -> f a
   Alts gs -> Alts (do g <- gs; return (g >>= f))
   GetNT nt k -> GetNT nt (\a -> k a >>= f)
 
+--token :: Gram t a -- How can this type be allowed? (it is!)
 token :: Gram t t
-token = GetToken Ret
+token = GetNT tokenNT Ret
 
 symbol :: Eq t => t -> Gram t ()
 symbol x = do t <-token; if t==x then return () else fail
@@ -77,7 +78,6 @@ many g = many_g
 skipWhile :: Gram t () -> Gram t ()
 skipWhile p = do _ <- many p; return ()
 
-
 data Rule t = forall a. Rule (NT t a) (Gram t a)
 
 isRuleKeyedBy :: NT t a -> Rule t -> Bool
@@ -85,7 +85,6 @@ isRuleKeyedBy nt1 (Rule nt2 _) =
   withKeyOfNT nt1 $ \key1 ->
   withKeyOfNT nt2 $ \key2 ->
   HMap.unique key1 == HMap.unique key2
-
 
 data Lang t a = Lang a [Rule t]
 
@@ -99,7 +98,7 @@ instance Monad (Lang t) where
     Lang b (rules1 ++ rules2)
 
 createNamedNT :: Show a => String -> Lang t (NT t a)
-createNamedNT name = withNT (NtName name) $ \nt -> Lang nt []
+createNamedNT name = withNT name $ \nt -> Lang nt []
 
 declare :: Show a => String -> Lang t (NT t a, Gram t a)
 declare name = do
@@ -121,7 +120,6 @@ fix name f = do
   fixed <- f gram
   () <- produce nt fixed
   return gram
-
 
 newtype Eff = Eff Int deriving Show
 
@@ -174,9 +172,8 @@ fullParseAt start pos s = not (null results)
        Just chan -> Pipe.elems chan
        Nothing -> error "startChan missing"
 
-
 -- | Result of running a 'parse' function.
--- Combines the 'a' outcome with an indication of the effort taken
+-- Combines the outcome with an indication of the effort taken
 data Parsing a = Parsing { effort :: Eff, outcome :: a } deriving Functor
 
 data SyntaxError
@@ -209,7 +206,6 @@ parseAmb lang input =
    f (Left (AmbiguityError _)) = error "gparseAmb, AmbiguityError not possible"
    f (Right xs) = Right xs
 
-
 data Config = Config { allowAmbiguity :: Bool }
 
 allowAmb :: Config
@@ -225,27 +221,25 @@ ggparse config lang input =
   parsing
   where
     parsing = 
-      withNT Token $ \tokenNT ->
-      withNT Start $ \startNT ->
       let Lang gram rules = lang in
-      go config tokenNT (startNT,gram) rules input  
+      go config gram rules input  
 
-go :: Config -> NT t t -> (NT t a, Gram t a) -> [Rule t] -> [t] -> Parsing (Outcome a)
-go config tokenNT (startNT,gram) rules input =
+go :: Config -> Gram t a -> [Rule t] -> [t] -> Parsing (Outcome a)
+go config gram rules input =
   let initState = State { chans = HMap.empty, effortState = Eff 0 } in
   let state0 = insertChan initState (startNT,0) Pipe.empty in
   let startItem = Item 0 startNT 0 gram in
-  let (state1,optAmb) = execItemsWithRules config tokenNT rules [startItem] state0 in
+  let (state1,optAmb) = execItemsWithRules config rules [startItem] state0 in
   case optAmb of
   Just ambiguity ->
     Parsing (effortState state1) (Left (AmbiguityError ambiguity))
 
   Nothing ->
-    let (s,outcome) = loop config tokenNT startNT rules 0 state1 input in
+    let (s,outcome) = loop config rules 0 state1 input in
     Parsing (effortState s) outcome
 
-loop :: Config -> NT t t -> NT t a -> [Rule t] -> Pos -> State -> [t] -> (State,Outcome a)
-loop config tokenNT startNT rules pos s xs = case xs of
+loop :: Config -> [Rule t] -> Pos -> State -> [t] -> (State,Outcome a)
+loop config rules pos s xs = case xs of
   [] ->
     case lookChan s (startNT,0) of
      Nothing -> error "startChan missing"
@@ -271,14 +265,14 @@ loop config tokenNT startNT rules pos s xs = case xs of
       let upto = (x,pos+1) in
       let (chan',items) = Pipe.write upto chan in
       let s2 = insertChan s from chan' in
-      let (s3,optAmb) = execItemsWithRules config tokenNT rules items s2 in
+      let (s3,optAmb) = execItemsWithRules config rules items s2 in
       case optAmb of
        Just ambiguity -> (s, Left (AmbiguityError ambiguity))
-       Nothing -> loop config tokenNT startNT rules (pos+1) s3 xs
+       Nothing -> loop config rules (pos+1) s3 xs
 
 
-execItemsWithRules :: forall t. Config -> NT t t -> [Rule t] -> [Item t] -> State -> (State, Maybe Ambiguity)
-execItemsWithRules config tokenNT rules items state = execItems items state
+execItemsWithRules :: forall t. Config -> [Rule t] -> [Item t] -> State -> (State, Maybe Ambiguity)
+execItemsWithRules config rules items state = execItems items state
   where
 
     findRules :: NT t a -> [Rule t]
@@ -301,18 +295,11 @@ execItemsWithRules config tokenNT rules items state = execItems items state
          Right (s1,items1) ->
            execItems (items1 ++ items) (incEffortState s1)
 
-      GetToken kT -> do
-        let from = (tokenNT,p2)
-        let reader (t,p3) = Item p1 nt p3 (kT t)
-        let (s1,items1) = awaitState s from reader 
-        execItems (items1 ++ items) (incEffortState s1)
-
       GetNT ntB kB -> do
         let from = (ntB,p2)
         let reader (b,p3) = Item p1 nt p3 (kB b)
         let (s1,items1) = awaitState s from reader
         execItems  (items1 ++ items) (incEffortState s1)
-
 
     produceState :: State -> From t a -> Upto a -> Either Ambiguity (State, [Item t])
     produceState s from upto =
