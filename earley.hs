@@ -23,15 +23,6 @@ data NT t a = forall x. NT String (HKey x (StateValue t a)) -- TODO: add 2nd key
 withNT :: String -> (NT t a -> b) -> b
 withNT name k = HMap.withKey $ \key -> k (NT name key)
 
-createNT :: String -> NT t a
-createNT name = withNT name id
-
-tokenNT :: NT t a
-tokenNT = createNT "<token>"
-
-startNT :: NT t a
-startNT = createNT "<start>"
-
 withKeyOfNT :: NT t a -> (forall x. HKey x (StateValue t a) -> b) -> b
 withKeyOfNT (NT _ key) k = k key
 
@@ -55,13 +46,6 @@ bind gram f = case gram of
   Ret a -> f a
   Alts gs -> Alts (do g <- gs; return (g >>= f))
   GetNT nt k -> GetNT nt (\a -> k a >>= f)
-
---token :: Gram t a -- How can this type be allowed? (it is!)
-token :: Gram t t
-token = GetNT tokenNT Ret
-
---symbol :: Eq t => t -> Gram t ()
---symbol x = do t <-token; if t==x then return () else fail
 
 referenceNT :: NT t a -> Gram t a
 referenceNT nt = GetNT nt Ret
@@ -87,22 +71,23 @@ isRuleKeyedBy nt1 (Rule nt2 _) =
   withKeyOfNT nt2 $ \key2 ->
   HMap.unique key1 == HMap.unique key2
 
-data Lang t a = Lang a [Rule t]
+data Lang t a = Lang { runLang :: NT t t -> (a,[Rule t]) }
 
 instance Functor (Lang t) where fmap = liftM
 instance Applicative (Lang t) where pure = return; (<*>) = ap
 
 instance Monad (Lang t) where
-  return a = Lang a []
-  (>>=) (Lang a rules1) f =
-    let Lang b rules2 = f a in
-    Lang b (rules1 ++ rules2)
+  return a = Lang$ \_ -> (a, [])
+  (>>=) m f = Lang$ \tok ->
+    let (a,rules1) = runLang m tok in
+    let (b,rules2) = runLang (f a) tok in
+    (b, rules1 ++ rules2)
 
 getToken :: Lang t (Gram t t)
-getToken = return token
+getToken = Lang$ \tok -> (referenceNT tok, [])
 
 createNamedNT :: Show a => String -> Lang t (NT t a)
-createNamedNT name = withNT name $ \nt -> Lang nt []
+createNamedNT name = withNT name $ \nt -> Lang$ \_ -> (nt, [])
 
 declare :: Show a => String -> Lang t (NT t a, Gram t a)
 declare name = do
@@ -110,7 +95,7 @@ declare name = do
   return (nt, referenceNT nt)
 
 produce :: NT t a -> Gram t a -> Lang t ()
-produce nt gram = Lang () [Rule nt gram]
+produce nt gram = Lang$ \_ -> ((), [Rule nt gram])
 
 share :: Show a => String -> Gram t a -> Lang t (Gram t a)
 share name gram = do
@@ -224,12 +209,14 @@ ggparse :: (Show a, Show t) => Config -> Lang t (Gram t a) -> [t] -> Parsing (Ou
 ggparse config lang input =
   parsing
   where
-    parsing = 
-      let Lang gram rules = lang in
-      go config gram rules input  
+    parsing =
+      withNT "<token>" $ \tokenNT ->
+      let (gram,rules) = runLang lang tokenNT in
+      go tokenNT config gram rules input  
 
-go :: Config -> Gram t a -> [Rule t] -> [t] -> Parsing (Outcome a)
-go config gram rules input =
+go :: NT t t -> Config -> Gram t a -> [Rule t] -> [t] -> Parsing (Outcome a)
+go tokenNT config gram rules input =
+  withNT "<start>" $ \startNT ->
   let initState = State { chans = HMap.empty, effortState = Eff 0 } in
   let state0 = insertChan initState (startNT,0) Pipe.empty in
   let startItem = Item 0 startNT 0 gram in
@@ -239,11 +226,11 @@ go config gram rules input =
     Parsing (effortState state1) (Left (AmbiguityError ambiguity))
 
   Nothing ->
-    let (s,outcome) = loop config rules 0 state1 input in
+    let (s,outcome) = loop startNT tokenNT config rules 0 state1 input in
     Parsing (effortState s) outcome
 
-loop :: Config -> [Rule t] -> Pos -> State -> [t] -> (State,Outcome a)
-loop config rules pos s xs = case xs of
+loop :: NT t a -> NT t t -> Config -> [Rule t] -> Pos -> State -> [t] -> (State,Outcome a)
+loop startNT tokenNT config rules pos s xs = case xs of
   [] ->
     case lookChan s (startNT,0) of
      Nothing -> error "startChan missing"
@@ -272,7 +259,7 @@ loop config rules pos s xs = case xs of
       let (s3,optAmb) = execItemsWithRules config rules items s2 in
       case optAmb of
        Just ambiguity -> (s, Left (AmbiguityError ambiguity))
-       Nothing -> loop config rules (pos+1) s3 xs
+       Nothing -> loop startNT tokenNT config rules (pos+1) s3 xs
 
 
 execItemsWithRules :: forall t. Config -> [Rule t] -> [Item t] -> State -> (State, Maybe Ambiguity)
