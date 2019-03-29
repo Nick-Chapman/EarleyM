@@ -2,10 +2,11 @@
 
 -- | Monadic combinators for Earley Parsing
 module Earley (
-  Gram,token,symbol,alts,fail,many,skipWhile, 
-  Lang,NT,declare,produce,share,fix, 
-  Parsing(..),parse,parseAmb,
-  SyntaxError(..),Ambiguity(..),ParseError(..),Pos,Eff(..)
+  Gram, alts, fail, many, skipWhile,
+  NT, referenceNT,
+  Lang, getToken, createNamedNT, declare, produce, share, fix,  
+  Parsing(..), parse, parseAmb, 
+  SyntaxError(..), Ambiguity(..), ParseError(..), Eff(..), Pos
   ) where
 
 import Prelude hiding (exp,fail,lex)
@@ -59,8 +60,8 @@ bind gram f = case gram of
 token :: Gram t t
 token = GetNT tokenNT Ret
 
-symbol :: Eq t => t -> Gram t ()
-symbol x = do t <-token; if t==x then return () else fail
+--symbol :: Eq t => t -> Gram t ()
+--symbol x = do t <-token; if t==x then return () else fail
 
 referenceNT :: NT t a -> Gram t a
 referenceNT nt = GetNT nt Ret
@@ -96,6 +97,9 @@ instance Monad (Lang t) where
   (>>=) (Lang a rules1) f =
     let Lang b rules2 = f a in
     Lang b (rules1 ++ rules2)
+
+getToken :: Lang t (Gram t t)
+getToken = return token
 
 createNamedNT :: Show a => String -> Lang t (NT t a)
 createNamedNT name = withNT name $ \nt -> Lang nt []

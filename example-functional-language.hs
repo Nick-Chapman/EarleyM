@@ -26,6 +26,8 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
 
 lang :: Lang Char (Gram Char Exp)
 lang = do
+  token <- getToken
+  let symbol x = do t <-token; if t==x then return () else fail
   let sat pred = do c <- token; if pred c then return c else fail
   let alpha = sat Char.isAlpha
   let numer = sat Char.isDigit

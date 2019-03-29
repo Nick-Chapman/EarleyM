@@ -40,6 +40,7 @@ lang = do
 
 lex :: String -> [String] -> Lang String (Gram String Tree)
 lex name ws = do
+  token <- getToken
   share name $
     alts (map (\w -> do
                   w' <- token

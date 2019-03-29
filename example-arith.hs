@@ -22,6 +22,8 @@ tests = [
     run = check (outcome . parse lang) tag
     lang = do
 
+      token <- getToken
+      let symbol x = do t <-token; if t==x then return () else fail
       let dig = do c <- token; if Char.isDigit c then return [c] else fail
       let lit x = do symbol x; return [x]
       

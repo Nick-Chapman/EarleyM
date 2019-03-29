@@ -1,5 +1,6 @@
 module Example.DictionaryLexing(tests) where
 
+import Prelude hiding(fail)
 import qualified Data.Char as Char
 import Testing
 import Earley
@@ -12,6 +13,8 @@ import Earley
 
 genLang :: [String] -> Lang Char (Gram Char [String])
 genLang dict = do
+  token <- getToken
+  let symbol x = do t <-token; if t==x then return () else fail
   let lit x = do symbol x; return x
   let word0 = alts (map (sequence . map lit) dict)
   (word',word) <- declare"WORD"; produce word' word0 -- It's much slower if we dont make a non-terminal
