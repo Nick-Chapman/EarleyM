@@ -24,6 +24,9 @@ instance Show Exp where -- simple, fully parenthesized, pretty-printer
     Lam s body -> "(\\" ++ s ++ "." ++ show body ++ ")"
     Add e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
 
+
+data OpenOrClosedOnRight = Open | Closed deriving Show
+
 lang :: Lang Char (Gram Exp)
 lang = do
   token <- getToken
@@ -50,21 +53,19 @@ lang = do
   exp <- fix"exp" $ \exp -> do
     lambdarized_exp <- share "lambda" (lambdarized exp)
     -- distingish open/closed atoms and applications
-    atomO <- share "atomO" (alts [var,num])
-    atomC <- share "atomC" (parenthesized (lambdarized_exp))
-    (appC',appC) <- declare"appC"
-    (appO',appO) <- declare"appO"
-    produce appC' $ alts [
-      atomC,
-      do a <- appC; ws; b <- atomC; return (App a b),
-      do a <- appO; ws; b <- atomC; return (App a b)
+    let atomO = do e <- alts [var,num];                  return (e,Open)
+    let atomC = do e <- parenthesized (lambdarized_exp); return (e,Closed)
+    let atom = alts [atomO,atomC]
+    (app',app) <- declare"app"
+    produce app' $ alts [
+      atom,
+      do
+        (a,oc1) <- app
+        gap <- alts [return False, do required_ws; return True]
+        (b,oc2) <- case (oc1,gap) of (Open,False) -> atomC; _ -> atom --context sensitive grammar here
+        return ((App a b),oc2)
       ]
-    produce appO' $ alts [
-      atomO,
-      do a <- appC;          ws; b <- atomO; return (App a b),
-      do a <- appO; required_ws; b <- atomO; return (App a b)
-      ]
-    let application = alts [appO,appC]
+    let application = do ~(a,_) <- app; return a
     let addition = alts [
           application,
           do a <- exp; ws; symbol '+'; ws; b <- exp; return (Add a b) -- grammar is deliberately ambiguous here
