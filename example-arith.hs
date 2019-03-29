@@ -6,10 +6,10 @@ import Testing
 import Earley
 
 
-(-->) :: NT t a -> Gram t a -> Lang t ()
+(-->) :: NT a -> Gram a -> Lang t ()
 (-->) = produce
 
-seq :: [Gram t String] -> Gram t String
+seq :: [Gram String] -> Gram String
 seq gs = do xs <- sequence gs; return ("(" ++ concat xs ++ ")")
 
 

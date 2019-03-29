@@ -14,7 +14,7 @@ instance Show Tree where
   show (Word s) = s
   show (Phrase ts) = "(" ++ intercalate " " (map show ts) ++ ")"
 
-lang :: Lang String (Gram String Tree)
+lang :: Lang String (Gram Tree)
 lang = do
 
   pro  <- lex"PRO" ["I"]
@@ -38,7 +38,7 @@ lang = do
   
   return s
 
-lex :: String -> [String] -> Lang String (Gram String Tree)
+lex :: String -> [String] -> Lang String (Gram Tree)
 lex name ws = do
   token <- getToken
   share name $
@@ -47,10 +47,10 @@ lex name ws = do
                   if w==w' then return (Word w) else fail
               ) ws)
 
-seq :: [Gram t Tree] -> Gram t Tree
+seq :: [Gram Tree] -> Gram Tree
 seq = fmap Phrase . sequence
 
-(-->) :: NT t a -> Gram t a -> Lang t ()
+(-->) :: NT a -> Gram a -> Lang t ()
 (-->) = produce
 
 

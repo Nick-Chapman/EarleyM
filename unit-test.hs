@@ -6,7 +6,7 @@ import Testing
 import Earley
 
 
-getDigit :: Lang Char (Gram Char Int)
+getDigit :: Lang Char (Gram Int)
 getDigit = do
   token <- getToken
   return$
@@ -164,7 +164,7 @@ tests6 = [
     tag = "zeroG"
     run = check (countAmb . outcome . parseAmb lang) tag
     lang = do
-      return (do (fail :: Gram Char Int))
+      return (do (fail :: Gram Int))
 
 
 tests7 :: [IO Bool]
