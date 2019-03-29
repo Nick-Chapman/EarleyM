@@ -3,8 +3,9 @@
 -- | Monadic combinators for Earley Parsing
 module Earley (
   Gram, alts, fail, many, skipWhile,
-  NT, referenceNT,
-  Lang, getToken, createNamedNT, declare, produce, share, fix,  
+  
+  Lang, getToken, 
+  NT, createNamedNT, referenceNT, declare, produce, share, fix,
 
   Parsing(..), SyntaxError(..), parseAmb, 
   Ambiguity(..), ParseError(..), parse, 
@@ -72,12 +73,6 @@ instance Show (NT a) where
   show (NT name _) = name
 
 
--- | Reference a non-terminal on the RHS of a production.
-referenceNT :: NT a -> Gram a
-referenceNT nt = GetNT nt Ret
-
-
-
 data Rule = forall a. Rule (NT a) (Gram a)
 
 isRuleKeyedBy :: NT a -> Rule -> Bool
@@ -105,11 +100,15 @@ instance Monad (Lang t) where
 getToken :: Lang t (Gram t)
 getToken = Lang$ \tok -> (referenceNT tok, [])
 
--- | Create a fresh non-terminal. The name is only used for debugging and reporting ambiguity.
+-- | Create a fresh non-terminal within a language definition. The name is only used for debugging and reporting ambiguity. This is a low level primitive. Simpler to use 'declare'.
 createNamedNT :: Show a => String -> Lang t (NT a)
 createNamedNT name = withNT name $ \nt -> Lang$ \_ -> (nt, [])
 
--- | Convenience combination of 'createNamedNT' and 'referenceNT', returning a pair of values for use on the LHS/RHS.
+-- | Reference a non-terminal on the RHS of a production. This is a low level primitive. Simpler to use 'declare'.
+referenceNT :: NT a -> Gram a
+referenceNT nt = GetNT nt Ret
+
+-- | Convenience combination of 'createNamedNT' and 'referenceNT', returning a pair of values for a fresh non-terminal, for use on the LHS/RHS.
 declare :: Show a => String -> Lang t (NT a, Gram a)
 declare name = do
   nt <- createNamedNT name
@@ -119,7 +118,7 @@ declare name = do
 produce :: NT a -> Gram a -> Lang t ()
 produce nt gram = Lang$ \_ -> ((), [Rule nt gram])
 
--- | Combination of declare/produce which has the effect of sharing a grammma description via a fresh non-terminal.
+-- | Combination of declare/produce which has the effect of sharing a grammar description via a fresh non-terminal.
 share :: Show a => String -> Gram a -> Lang t (Gram a)
 share name gram = do
   (nt,g2) <- declare name
