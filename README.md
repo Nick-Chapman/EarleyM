@@ -1,6 +1,6 @@
-# Earley Parsing with Monadic Combinators
+# earley-parsing
 
-Haskell implementation of Monadic-style combinators for Earley Parsing.
+Monadic-style combinators for Earley Parsing.
 
 These combinators support left-recursive and ambiguous grammars, but provide a standard monadic parser interface.
 This implementation re-works an earlier Ocaml implementation:

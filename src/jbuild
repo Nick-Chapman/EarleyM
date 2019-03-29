@@ -2,12 +2,12 @@
 (rule
  ((targets (main.exe))
   (deps ((glob_files *.hs)))
-  (action "ghc -Wall -fno-warn-name-shadowing *.hs -o main.exe")))
+  (action "ghc -Wall -fno-warn-name-shadowing *.hs Example/*.hs -o main.exe")))
 
 (rule
  ((targets (haddock.out))
   (deps ((glob_files *.hs)))
-  (action "rm -rf doc; haddock --html earley.hs pipe.hs  -o /tmp/earley > haddock.out")))
+  (action "haddock --html Earley.hs Pipe.hs  -o /tmp/earley > haddock.out")))
 
 (rule
  ((targets (main.out main.trace))
