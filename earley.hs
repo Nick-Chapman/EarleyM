@@ -5,8 +5,11 @@ module Earley (
   Gram, alts, fail, many, skipWhile,
   NT, referenceNT,
   Lang, getToken, createNamedNT, declare, produce, share, fix,  
-  Parsing(..), parse, parseAmb, 
-  SyntaxError(..), Ambiguity(..), ParseError(..), Eff(..), Pos
+
+  Parsing(..), SyntaxError(..), parseAmb, 
+  Ambiguity(..), ParseError(..), parse, 
+
+  Eff(..), Pos
   ) where
 
 import Prelude hiding (exp,fail,lex)
@@ -18,17 +21,7 @@ import Data.HMap(HKey,HMap)
 import qualified Pipe
 import Pipe(Pipe)
 
-data NT a = forall x. NT String (HKey x (StateValue a)) -- TODO: add 2nd key into rules
-
-withNT :: String -> (NT a -> b) -> b
-withNT name k = HMap.withKey $ \key -> k (NT name key)
-
-withKeyOfNT :: NT a -> (forall x. HKey x (StateValue a) -> b) -> b
-withKeyOfNT (NT _ key) k = k key
-
-instance Show (NT a) where
-  show (NT name _) = name
-
+-- | Type of grammars. RHS of a production rules. Synthesizing values of type 'a'. Monadic construction allows context-sensitive grammars.
 data Gram a where
   Ret :: a -> Gram a
   Alts :: [Gram a] -> Gram a
@@ -47,21 +40,43 @@ bind gram f = case gram of
   Alts gs -> Alts (do g <- gs; return (g >>= f))
   GetNT nt k -> GetNT nt (\a -> k a >>= f)
 
-referenceNT :: NT a -> Gram a
-referenceNT nt = GetNT nt Ret
-
+-- | Grammar constructed from a list of alteratives. Alternations may be nested; we are not restricted to just having alternate productions for a given non-terminal.
 alts :: [Gram a] -> Gram a
 alts = Alts
 
+-- | Grammar constructed from no alteratives. @fail == alts []@
 fail :: Gram a
 fail = Alts []
 
+-- | Grammar for kleene '*'. Constructs an infinite RHS. Use in preference to right-recursion via a non-terminal, which has quadratic inefficiency.
 many :: Gram a -> Gram [a] 
 many g = many_g
   where many_g = alts [return [], do x <- g; xs <- many_g; return (x : xs)]
 
+-- | Kleene '*' which ignores the synthesized value.
+--  @ skipWhile p == do _ <- many p; return () @
 skipWhile :: Gram () -> Gram ()
 skipWhile p = do _ <- many p; return ()
+
+
+-- | Type of non-terminals. LHS of a production rules. Carrying values of type 'a'.
+data NT a = forall x. NT String (HKey x (StateValue a)) -- TODO: add 2nd key into rules
+
+withNT :: String -> (NT a -> b) -> b
+withNT name k = HMap.withKey $ \key -> k (NT name key)
+
+withKeyOfNT :: NT a -> (forall x. HKey x (StateValue a) -> b) -> b
+withKeyOfNT (NT _ key) k = k key
+
+instance Show (NT a) where
+  show (NT name _) = name
+
+
+-- | Reference a non-terminal on the RHS of a production.
+referenceNT :: NT a -> Gram a
+referenceNT nt = GetNT nt Ret
+
+
 
 data Rule = forall a. Rule (NT a) (Gram a)
 
@@ -71,7 +86,9 @@ isRuleKeyedBy nt1 (Rule nt2 _) =
   withKeyOfNT nt2 $ \key2 ->
   HMap.unique key1 == HMap.unique key2
 
-data Lang t a = Lang { runLang :: NT t -> (a,[Rule]) }
+
+-- | Type for language definition over terminals (tokens) of type 't'. A collection of production rules together with an entry point. Constructed monadically.
+data Lang t a = Lang { runLang :: NT t -> (a, [Rule]) }
 
 instance Functor (Lang t) where fmap = liftM
 instance Applicative (Lang t) where pure = return; (<*>) = ap
@@ -83,26 +100,33 @@ instance Monad (Lang t) where
     let (b,rules2) = runLang (f a) tok in
     (b, rules1 ++ rules2)
 
+
+-- | Access to the grammar for tokens within a language definition.
 getToken :: Lang t (Gram t)
 getToken = Lang$ \tok -> (referenceNT tok, [])
 
+-- | Create a fresh non-terminal. The name is only used for debugging and reporting ambiguity.
 createNamedNT :: Show a => String -> Lang t (NT a)
 createNamedNT name = withNT name $ \nt -> Lang$ \_ -> (nt, [])
 
+-- | Convenience combination of 'createNamedNT' and 'referenceNT', returning a pair of values for use on the LHS/RHS.
 declare :: Show a => String -> Lang t (NT a, Gram a)
 declare name = do
   nt <- createNamedNT name
   return (nt, referenceNT nt)
 
+-- | Define a language production, linking the LHS and RHS of the rule.
 produce :: NT a -> Gram a -> Lang t ()
 produce nt gram = Lang$ \_ -> ((), [Rule nt gram])
 
+-- | Combination of declare/produce which has the effect of sharing a grammma description via a fresh non-terminal.
 share :: Show a => String -> Gram a -> Lang t (Gram a)
 share name gram = do
   (nt,g2) <- declare name
   produce nt gram
   return g2
   
+-- | Combination of declare/produce to allow reference to a grammar within its own defintion. Use this for language with left-recursion.
 fix :: Show a => String -> (Gram a -> Lang t (Gram a)) -> Lang t (Gram a)
 fix name f = do
   (nt,gram) <- declare name
@@ -110,12 +134,17 @@ fix name f = do
   () <- produce nt fixed
   return gram
 
+
+-- | Type to represent the effort taken during parsing. Used by some unit-tests.
 newtype Eff = Eff Int deriving Show
 
 incEff :: Eff -> Eff
 incEff (Eff x) = Eff (x+1)
 
+-- | Type of positions. Used in parse error reports. Indicates the index of the input token list reached before the error was encountered.
 type Pos = Int
+
+
 type From a = (NT a, Pos)
 type Upto a = (a, Pos)
 
@@ -161,23 +190,29 @@ fullParseAt start pos s = not (null results)
        Just chan -> Pipe.elems chan
        Nothing -> error "startChan missing"
 
--- | Result of running a 'parse' function.
--- Combines the outcome with an indication of the effort taken
+
+-- | Result of running a parsing function: 'parse' or 'parseAmb'. Combines the outcome with the effort taken.
 data Parsing a = Parsing { effort :: Eff, outcome :: a } deriving Functor
 
+
+-- | Type describing a syntax-error encountered during parsing. In all cases the final position reached before the error is reported. This position is automatically determined by the Early parsing algorithm.
 data SyntaxError
   = UnexpectedTokenAt Pos
   | UnexpectedEOF Pos
   | ExpectedEOF Pos
   deriving (Show,Eq)
 
+-- | Type describing a parse ambiguity for a specific non-terminal (name), across a position range. This may be reported as an error by the 'parse' entry point.
 data Ambiguity = Ambiguity String Pos Pos deriving (Show,Eq)
 
+-- | Union of 'SyntaxError' and 'Ambiguity', for reporting errors from 'parse'.
 data ParseError
   = SyntaxError SyntaxError
   | AmbiguityError Ambiguity
   deriving (Show,Eq)
 
+
+-- | Entry-point to run a parse. Rejects ambiguity. Parse a list of tokens using a Lang/Gram definition. Returns the single parse or a parse-error.
 parse :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either ParseError a)
 parse lang input =
   fmap f (ggparse rejectAmb lang input)
@@ -187,6 +222,8 @@ parse lang input =
    f (Right [x]) = Right x
    f (Right (_:_)) = Left (AmbiguityError (Ambiguity "start" 0 (length input)))
    
+
+-- | Entry-point to run a parse. Allows ambiguity. Parses a list of tokens using a Lang/Gram definition. Returns all parses or a syntax-error.
 parseAmb :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
 parseAmb lang input =
   fmap f (ggparse allowAmb lang input)
@@ -194,6 +231,7 @@ parseAmb lang input =
    f (Left (SyntaxError e)) = Left e
    f (Left (AmbiguityError _)) = error "gparseAmb, AmbiguityError not possible"
    f (Right xs) = Right xs
+
 
 data Config = Config { allowAmbiguity :: Bool }
 
