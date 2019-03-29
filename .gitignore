@@ -9,7 +9,7 @@ cabal-dev
 .cabal-sandbox/
 cabal.sandbox.config
 *~
-
+jbuild
 main.exe
 main.out
 main.trace
