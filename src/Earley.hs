@@ -5,7 +5,7 @@ module Earley (
   Gram, alts, fail, many, skipWhile,
   
   Lang, getToken, 
-  NT, createNamedNT, referenceNT, declare, produce, share, fix,
+  NT, createNamedNT, referenceNT, declare, produce, fix,
 
   Parsing(..), SyntaxError(..), parseAmb, 
   Ambiguity(..), ParseError(..), parse, 
@@ -118,13 +118,6 @@ declare name = do
 produce :: NT a -> Gram a -> Lang t ()
 produce nt gram = Lang$ \_ -> ((), [Rule nt gram])
 
--- | Combination of declare/produce which has the effect of sharing a grammar description via a fresh non-terminal.
-share :: Show a => String -> Gram a -> Lang t (Gram a)
-share name gram = do
-  (nt,g2) <- declare name
-  produce nt gram
-  return g2
-  
 -- | Combination of declare/produce to allow reference to a grammar within its own defintion. Use this for language with left-recursion.
 fix :: Show a => String -> (Gram a -> Lang t (Gram a)) -> Lang t (Gram a)
 fix name f = do

@@ -40,8 +40,8 @@ lang = do
     do n <- digits; d <- digit; return (10 * n + d),
     digit
     ]
-  ident <- share "ident" $ do x <- alpha; xs <- many (alts [alpha,numer]); return (x : xs) 
-  ws <- share "ws" (skipWhile white) -- optional white space
+  let ident = do x <- alpha; xs <- many (alts [alpha,numer]); return (x : xs)
+  let ws = skipWhile white -- optional white space
   let required_ws = do white; ws
   let var = do s <- ident; return (Var s)
   let num = do n <- digits; return (Num n)
@@ -51,10 +51,9 @@ lang = do
         e <- exp
         return$ foldr Lam e xs
   exp <- fix"exp" $ \exp -> do
-    lambdarized_exp <- share "lambda" (lambdarized exp)
     -- distingish open/closed atoms and applications
     let atomO = do e <- alts [var,num];                  return (e,Open)
-    let atomC = do e <- parenthesized (lambdarized_exp); return (e,Closed)
+    let atomC = do e <- parenthesized (lambdarized exp); return (e,Closed)
     let atom = alts [atomO,atomC]
     (app',app) <- declare"app"
     produce app' $ alts [

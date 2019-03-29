@@ -17,11 +17,11 @@ instance Show Tree where
 lang :: Lang String (Gram Tree)
 lang = do
 
-  pro  <- lex"PRO" ["I"]
-  det  <- lex"D" ["the","a"]
-  verb <- lex"V" ["saw"]
-  noun <- lex"N" ["man","telescope","hill"]    
-  prep <- lex"P" ["on","with"]    
+  pro  <- lex ["I"]
+  det  <- lex ["the","a"]
+  verb <- lex ["saw"]
+  noun <- lex ["man","telescope","hill"]    
+  prep <- lex ["on","with"]    
   
   (s',s)   <- declare"S"
   (np',np) <- declare"NP"
@@ -38,10 +38,10 @@ lang = do
   
   return s
 
-lex :: String -> [String] -> Lang String (Gram Tree)
-lex name ws = do
+lex :: [String] -> Lang String (Gram Tree)
+lex ws = do
   token <- getToken
-  share name $
+  return$
     alts (map (\w -> do
                   w' <- token
                   if w==w' then return (Word w) else fail
