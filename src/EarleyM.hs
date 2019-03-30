@@ -2,11 +2,12 @@
 
 -- | Monadic combinators for Earley Parsing
 module EarleyM (
+  -- * Grammars, Non-terminals, Productions
   Gram, alts, fail, many, skipWhile,
-  
   Lang, getToken, 
   NT, createNamedNT, referenceNT, declare, produce, fix,
 
+  -- * Parsing
   Parsing(..), SyntaxError(..), parseAmb, 
   Ambiguity(..), ParseError(..), parse, 
 
