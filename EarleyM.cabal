@@ -14,16 +14,18 @@ extra-source-files:  README.md, ChangeLog.md
 
 library
   exposed-modules:     Earley
+  other-modules:       Pipe  
   build-depends:       base >=4.8 && <4.9, containers >=0.5 && <0.6, HMap >=1.2 && <1.3
-  hs-source-dirs:      src
+  hs-source-dirs:      src test examples
   default-language:    Haskell2010
   ghc-options:         -Wall -fno-warn-name-shadowing
 
 test-suite tests
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
+  other-modules:       UnitTest Testing Example.Catalan Example.PrepositionalAttachmentAmbiguity Example.FunctionalLanguage Example.DictionaryLexing Example.Arith
   build-depends:       base >=4.8 && <4.9, containers >=0.5 && <0.6, HMap >=1.2 && <1.3
-  hs-source-dirs:      src
+  hs-source-dirs:      src test examples
   default-language:    Haskell2010
   ghc-options:         -Wall -fno-warn-name-shadowing
 
