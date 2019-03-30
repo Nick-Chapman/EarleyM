@@ -3,7 +3,7 @@ name:                EarleyM
 version:             0.1.0.0
 synopsis:            Monadic Earley Parsing
 description:         Monadic combinators for Earley Parsing, supporting left-recursive, left-unfactored and ambiguous grammars.
-homepage:            https://github.com/Nick-Chapman/Earley
+homepage:            https://github.com/Nick-Chapman/EarleyM
 license:             BSD3
 license-file:        LICENSE
 author:              Nick Chapman
@@ -31,5 +31,5 @@ test-suite tests
 
 source-repository head
   type:                 git
-  location:             https://github.com/Nick-Chapman/Earley.git
+  location:             https://github.com/Nick-Chapman/EarleyM.git
   

@@ -1,8 +1,9 @@
-# earley-parsing
+# EarleyM
 
-Monadic-style combinators for Earley Parsing.
+Monadic Earley Parsing
 
-These combinators support left-recursive and ambiguous grammars, but provide a standard monadic parser interface.
+Monadic combinators for Earley Parsing, supporting left-recursive, left-unfactored and ambiguous grammars.
+
 This implementation re-works an earlier Ocaml implementation:
 https://github.com/Nick-Chapman/ocaml-chart-parsers
 with the following changes:
