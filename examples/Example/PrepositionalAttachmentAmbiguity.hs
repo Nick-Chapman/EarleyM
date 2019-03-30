@@ -5,7 +5,7 @@ module Example.PrepositionalAttachmentAmbiguity(tests) where
 
 import Prelude hiding (fail,exp,seq,lex)
 import Testing
-import Earley
+import EarleyM
 import Data.List
 
 data Tree = Word String | Phrase [Tree] deriving (Eq)

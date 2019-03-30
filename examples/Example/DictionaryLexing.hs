@@ -3,7 +3,7 @@ module Example.DictionaryLexing(tests) where
 import Prelude hiding(fail)
 import qualified Data.Char as Char
 import Testing
-import Earley
+import EarleyM
 
 -- This example constructs a very large grammar (from a dictionary), which is used to lex a sentence.
 -- The sentence has had it's interword whitespace removed.

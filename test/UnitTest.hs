@@ -3,7 +3,7 @@ module UnitTest(tests) where
 import Prelude hiding (fail,exp,seq)
 import qualified Data.Char as Char
 import Testing
-import Earley
+import EarleyM
 
 
 getDigit :: Lang Char (Gram Int)

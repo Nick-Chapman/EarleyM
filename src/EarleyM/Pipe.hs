@@ -1,4 +1,4 @@
-module Pipe(Pipe,empty,firstWrite,firstRead,write,read,elems,readers) where
+module EarleyM.Pipe(Pipe,empty,firstWrite,firstRead,write,read,elems,readers) where
 
 import Prelude hiding (read,elem)
 

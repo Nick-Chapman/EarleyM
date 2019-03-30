@@ -1,7 +1,7 @@
 module Example.Catalan(tests) where
 
 import Testing
-import Earley
+import EarleyM
 
 
 tests :: [IO Bool]

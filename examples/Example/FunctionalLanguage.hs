@@ -3,7 +3,7 @@ module Example.FunctionalLanguage(tests) where
 import Prelude hiding (fail,exp)
 import qualified Data.Char as Char
 import Testing
-import Earley
+import EarleyM
 
 digitOfChar :: Char -> Int
 digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'

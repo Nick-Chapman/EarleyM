@@ -1,7 +1,7 @@
 {-#LANGUAGE ScopedTypeVariables,ExistentialQuantification,GADTs,RankNTypes,DeriveFunctor#-}
 
 -- | Monadic combinators for Earley Parsing
-module Earley (
+module EarleyM (
   Gram, alts, fail, many, skipWhile,
   
   Lang, getToken, 
@@ -19,8 +19,8 @@ import qualified Data.Map as Map
 import Data.Map(Map)
 import qualified Data.HMap as HMap
 import Data.HMap(HKey,HMap)
-import qualified Pipe
-import Pipe(Pipe)
+import qualified EarleyM.Pipe as Pipe
+import EarleyM.Pipe(Pipe)
 
 -- | Type of grammars. RHS of a production rules. Synthesizing values of type 'a'. Monadic construction allows context-sensitive grammars.
 data Gram a where

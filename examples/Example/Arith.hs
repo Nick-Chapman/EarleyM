@@ -3,7 +3,7 @@ module Example.Arith(tests) where
 import Prelude hiding (seq,fail)
 import qualified Data.Char as Char
 import Testing
-import Earley
+import EarleyM
 
 
 (-->) :: NT a -> Gram a -> Lang t ()
