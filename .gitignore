@@ -1,9 +1,4 @@
 *~
 cabal.project.local
 dist-newstyle
-
-haddock.out
 jbuild
-main.exe
-main.out
-main.trace
