@@ -4,6 +4,8 @@
 -- Each element  (of type 'a') written to the pipe is "presented" to each reader (continuation) (of type @a -> r@).
 --
 -- Elements and readers can be adder in any order. When a new element is added, it is presented to the existing readers. When a new reader is adder, it is presented with the existing elements.
+--
+-- This type is used internally in the implementation of 'EarleyM', but it may be more widely useful.
 
 module EarleyM.Pipe(
   Pipe, empty,
