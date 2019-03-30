@@ -1,3 +1,4 @@
+cabal check
 cabal new-configure
 cabal new-build
 cabal new-test
