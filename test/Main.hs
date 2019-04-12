@@ -1,12 +1,12 @@
 module Main(main) where
 
-import Testing
-import UnitTest
-import Example.Arith
-import Example.PrepositionalAttachmentAmbiguity
-import Example.Catalan
-import Example.FunctionalLanguage
-import Example.DictionaryLexing
+import           Example.Arith
+import           Example.Catalan
+import           Example.DictionaryLexing
+import           Example.FunctionalLanguage
+import           Example.PrepositionalAttachmentAmbiguity
+import           Testing
+import           UnitTest
 
 main :: IO ()
 main = runAll (concat [

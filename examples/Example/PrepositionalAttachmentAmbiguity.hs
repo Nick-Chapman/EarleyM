@@ -3,15 +3,15 @@ module Example.PrepositionalAttachmentAmbiguity(tests) where
 -- Prepositional phrase attachment ambiguity example. See:
 -- https://allthingslinguistic.com/post/52411342274/how-many-meanings-can-you-get-for-the-sentence-i
 
-import Prelude hiding (fail,exp,seq,lex)
-import Testing
-import EarleyM
-import Data.List
+import           Data.List
+import           EarleyM
+import           Prelude   hiding (exp, fail, lex, seq)
+import           Testing
 
 data Tree = Word String | Phrase [Tree] deriving (Eq)
 
 instance Show Tree where
-  show (Word s) = s
+  show (Word s)    = s
   show (Phrase ts) = "(" ++ intercalate " " (map show ts) ++ ")"
 
 lang :: Lang String (Gram Tree)
@@ -20,9 +20,9 @@ lang = do
   pro  <- lex ["I"]
   det  <- lex ["the","a"]
   verb <- lex ["saw"]
-  noun <- lex ["man","telescope","hill"]    
-  prep <- lex ["on","with"]    
-  
+  noun <- lex ["man","telescope","hill"]
+  prep <- lex ["on","with"]
+
   (s',s)   <- declare"S"
   (np',np) <- declare"NP"
   (vp',vp) <- declare"VP"
@@ -35,7 +35,7 @@ lang = do
   pp' --> seq [prep,np]
   np' --> seq [np,pp]
   s'  --> seq [np,vp]
-  
+
   return s
 
 lex :: [String] -> Lang String (Gram Tree)

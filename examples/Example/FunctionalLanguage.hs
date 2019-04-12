@@ -1,9 +1,9 @@
 module Example.FunctionalLanguage(tests) where
 
-import Prelude hiding (fail,exp)
 import qualified Data.Char as Char
-import Testing
-import EarleyM
+import           EarleyM
+import           Prelude   hiding (exp, fail)
+import           Testing
 
 digitOfChar :: Char -> Int
 digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
@@ -11,18 +11,18 @@ digitOfChar c = Char.ord c - ord0 where ord0 = Char.ord '0'
 data Exp
   = Var String
   | Num Int
-  | App Exp Exp   
-  | Lam String Exp 
-  | Add Exp Exp   
+  | App Exp Exp
+  | Lam String Exp
+  | Add Exp Exp
   deriving (Eq)
 
 instance Show Exp where -- simple, fully parenthesized, pretty-printer
   show e = case e of
-    Var s -> s
-    Num i -> show i
-    App e1 e2 -> "(" ++ show e1 ++ " " ++ show e2 ++ ")"
+    Var s      -> s
+    Num i      -> show i
+    App e1 e2  -> "(" ++ show e1 ++ " " ++ show e2 ++ ")"
     Lam s body -> "(\\" ++ s ++ "." ++ show body ++ ")"
-    Add e1 e2 -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
+    Add e1 e2  -> "(" ++ show e1 ++ "+" ++ show e2 ++ ")"
 
 
 data OpenOrClosedOnRight = Open | Closed deriving Show
@@ -94,24 +94,24 @@ tests1 = [
   run "a(b)c"       "Yes ((a b) c)",
   run "(a b)c"      "Yes ((a b) c)",
   run "(a b) c"     "Yes ((a b) c)",
-  
+
   run "a(b c)"      "Yes (a (b c))",
   run "a (b c)"     "Yes (a (b c))",
-  
+
   run "a+b"         "Yes (a+b)",
   run " a + b "     "Yes (a+b)",
 
   run "a+b+c "      "Amb (Ambiguity \"exp\" 0 5)",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
-  
+
   run "f(1+2+3)x"   "Amb (Ambiguity \"exp\" 2 7)",
   run "f((1+2)+3)x" "Yes ((f ((1+2)+3)) x)",
   run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)",
 
   run "f(1+2+3+4)x" "Amb (Ambiguity \"exp\" 2 7)",
 
-  
+
   -- examples originally copied from parser4v tests
 
   run "4"           "Yes 4",
@@ -164,12 +164,12 @@ tests1 = [
   run "f+(\\x.x)"           "Yes (f+(\\x.x))",
   run "f+(\\x.x+y)"         "Yes (f+(\\x.(x+y)))",
   run "f+(\\x.x+(\\y.y))"   "Yes (f+(\\x.(x+(\\y.y))))",
-  
+
   run "(\\f.\\x.f(f x))(\\x.x+1)5"                       "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
   run " ( \\ f . \\ x . f ( f x ) ) ( \\ x . x + 1 ) 5 " "Yes (((\\f.(\\x.(f (f x)))) (\\x.(x+1))) 5)",
 
   run "f quitelong 3" "Yes ((f quitelong) 3)",
-  
+
   run " "   "No 2",
   run "#"   "No 1",
   run ")"   "No 1",
@@ -181,7 +181,7 @@ tests1 = [
   run "42x" "No 3",
 
   run "foo arg (\\x.42) + 10" "Yes (((foo arg) (\\x.42))+10)",
-  
+
   run "@foo arg (\\x.42) + 10" "No 1",
   run "f@oo arg (\\x.42) + 10" "No 2",
   run "fo@o arg (\\x.42) + 10" "No 3",
@@ -217,13 +217,13 @@ tests2 = [
   run "a+b+c"       "Multiple 2 [((a+b)+c),(a+(b+c))]",
   run "(a+b)+c"     "Yes ((a+b)+c)",
   run "a+(b+c)"     "Yes (a+(b+c))",
-  
+
   run "f(1+2+3)x"   "Multiple 2 [((f ((1+2)+3)) x),((f (1+(2+3))) x)]",
   run "f((1+2)+3)x" "Yes ((f ((1+2)+3)) x)",
   run "f(1+(2+3))x" "Yes ((f (1+(2+3))) x)",
 
   run "f(1+2+3+4)x" "Multiple 5 [((f (((1+2)+3)+4)) x),((f ((1+2)+(3+4))) x),((f (1+(2+(3+4)))) x),((f ((1+(2+3))+4)) x),((f (1+((2+3)+4))) x)]"
-  
+
   ]
   where
     tag = "juxta-exp-no-amb"
@@ -237,15 +237,15 @@ tests = concat [
   []
   ]
 
-  
+
 data YN a = Yes a | Multiple Int [a] | No Pos | Amb Ambiguity deriving Show
 
 classifyParseResult :: Either ParseError a -> YN a
-classifyParseResult (Right a) = Yes a
+classifyParseResult (Right a)                                    = Yes a
 classifyParseResult (Left (SyntaxError (UnexpectedTokenAt pos))) = No pos
-classifyParseResult (Left (SyntaxError (UnexpectedEOF pos))) = No pos
-classifyParseResult (Left (SyntaxError (ExpectedEOF pos))) = No pos
-classifyParseResult (Left (AmbiguityError amb)) = Amb amb
+classifyParseResult (Left (SyntaxError (UnexpectedEOF pos)))     = No pos
+classifyParseResult (Left (SyntaxError (ExpectedEOF pos)))       = No pos
+classifyParseResult (Left (AmbiguityError amb))                  = Amb amb
 
 classifyParseAmbResult :: Either SyntaxError [a] -> YN a
 classifyParseAmbResult (Right [a]) = Yes a

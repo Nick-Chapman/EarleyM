@@ -14,12 +14,12 @@ module EarleyM.Pipe(
   elems, readers
   ) where
 
-import Prelude hiding (read,elem)
+import           Prelude hiding (elem, read)
 
 -- | A "pipe" containing elements of type @a@, and readers of type @a -> r@.
 data Pipe a r = Pipe {
   -- | Get the elements of a pipe.
-  elems :: [a], 
+  elems   :: [a],
   -- | Get the readers of a pipe.
   readers :: [a -> r]
   }

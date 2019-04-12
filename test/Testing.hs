@@ -1,8 +1,8 @@
 -- Bare bones testing framework. TODO: use a real testing framework!
 module Testing (runAll,check) where
-       
-import Control.Exception
-import System.Exit
+
+import           Control.Exception
+import           System.Exit
 
 check :: (Show a, Show b, Eq b) => (a -> b) -> String -> a -> b -> IO Bool
 check f tag arg expect =

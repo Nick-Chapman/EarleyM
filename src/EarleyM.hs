@@ -1,27 +1,31 @@
-{-#LANGUAGE ScopedTypeVariables,ExistentialQuantification,GADTs,RankNTypes,DeriveFunctor#-}
+{-# LANGUAGE DeriveFunctor             #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE GADTs                     #-}
+{-# LANGUAGE RankNTypes                #-}
+{-# LANGUAGE ScopedTypeVariables       #-}
 
 -- | Monadic combinators for Earley Parsing
 module EarleyM (
   -- * Grammars, Non-terminals, Productions
   Gram, alts, fail, many, skipWhile,
-  Lang, getToken, 
+  Lang, getToken,
   NT, createNamedNT, referenceNT, declare, produce, fix,
 
   -- * Parsing
-  Parsing(..), SyntaxError(..), parseAmb, 
-  Ambiguity(..), ParseError(..), parse, 
+  Parsing(..), SyntaxError(..), parseAmb,
+  Ambiguity(..), ParseError(..), parse,
 
   Eff(..), Pos
   ) where
 
-import Prelude hiding (exp,fail,lex)
-import Control.Monad(liftM, ap)
-import qualified Data.Map as Map
-import Data.Map(Map)
-import qualified Data.HMap as HMap
-import Data.HMap(HKey,HMap)
-import qualified EarleyM.Pipe as Pipe
-import EarleyM.Pipe(Pipe)
+import           Control.Monad (ap, liftM)
+import           Data.HMap     (HKey, HMap)
+import qualified Data.HMap     as HMap
+import           Data.Map      (Map)
+import qualified Data.Map      as Map
+import           EarleyM.Pipe  (Pipe)
+import qualified EarleyM.Pipe  as Pipe
+import           Prelude       hiding (exp, fail, lex)
 
 -- | Type of grammars. RHS of a production rules. Synthesizing values of type 'a'. Monadic construction allows context-sensitive grammars.
 data Gram a where
@@ -38,8 +42,8 @@ instance Monad Gram where
 
 bind :: Gram a -> (a -> Gram b) -> Gram b
 bind gram f = case gram of
-  Ret a -> f a
-  Alts gs -> Alts (do g <- gs; return (g >>= f))
+  Ret a      -> f a
+  Alts gs    -> Alts (do g <- gs; return (g >>= f))
   GetNT nt k -> GetNT nt (\a -> k a >>= f)
 
 -- | Grammar constructed from a list of alteratives. Alternations may be nested; we are not restricted to just having alternate productions for a given non-terminal.
@@ -51,7 +55,7 @@ fail :: Gram a
 fail = Alts []
 
 -- | Grammar for kleene '*'. Constructs an infinite RHS. Use in preference to right-recursion via a non-terminal, which has quadratic inefficiency.
-many :: Gram a -> Gram [a] 
+many :: Gram a -> Gram [a]
 many g = many_g
   where many_g = alts [return [], do x <- g; xs <- many_g; return (x : xs)]
 
@@ -156,14 +160,14 @@ existsChan s (nt,pos) =
   withKeyOfNT nt $ \key ->
   case HMap.lookup key (chans s) of
    Nothing -> False
-   Just m -> Map.member pos m
+   Just m  -> Map.member pos m
 
 lookChan :: State -> From a -> Maybe (Chan a)
 lookChan s (nt,pos) =
   withKeyOfNT nt $ \key ->
   case HMap.lookup key (chans s) of
    Nothing -> Nothing
-   Just m -> Map.lookup pos m
+   Just m  -> Map.lookup pos m
 
 insertChan :: State -> From a -> Chan a -> State
 insertChan s (nt,pos) chan =
@@ -181,7 +185,7 @@ fullParseAt start pos s = not (null results)
     elems =
       case lookChan s (start,0) of
        Just chan -> Pipe.elems chan
-       Nothing -> error "startChan missing"
+       Nothing   -> error "startChan missing"
 
 
 -- | Result of running a parsing function: 'parse' or 'parseAmb'. Combines the outcome with the effort taken.
@@ -214,7 +218,7 @@ parse lang input =
    f (Right []) = error "gparse, [] results not possible"
    f (Right [x]) = Right x
    f (Right (_:_)) = Left (AmbiguityError (Ambiguity "start" 0 (length input)))
-   
+
 
 -- | Entry-point to run a parse. Allows ambiguity. Parses a list of tokens using a Lang/Gram definition. Returns all parses or a syntax-error.
 parseAmb :: (Show a, Show t) => Lang t (Gram a) -> [t] -> Parsing (Either SyntaxError [a])
@@ -243,7 +247,7 @@ ggparse config lang input =
     parsing =
       withNT "<token>" $ \tokenNT ->
       let (gram,rules) = runLang lang tokenNT in
-      go tokenNT config gram rules input  
+      go tokenNT config gram rules input
 
 go :: NT t -> Config -> Gram a -> [Rule] -> [t] -> Parsing (Outcome a)
 go tokenNT config gram rules input =
@@ -275,7 +279,7 @@ loop startNT tokenNT config rules pos s xs = case xs of
           else (s, Left (SyntaxError (UnexpectedTokenAt pos)))
         xs ->
           (s, Right xs)
-        
+
   x:xs ->
     let from = (tokenNT,pos) in
     case lookChan s from of
@@ -290,7 +294,7 @@ loop startNT tokenNT config rules pos s xs = case xs of
       let (s3,optAmb) = execItemsWithRules config rules items s2 in
       case optAmb of
        Just ambiguity -> (s, Left (AmbiguityError ambiguity))
-       Nothing -> loop startNT tokenNT config rules (pos+1) s3 xs
+       Nothing        -> loop startNT tokenNT config rules (pos+1) s3 xs
 
 
 execItemsWithRules :: Config -> [Rule] -> [Item] -> State -> (State, Maybe Ambiguity)
@@ -331,7 +335,7 @@ execItemsWithRules config rules items state = execItems items state
          if allowAmbiguity config
          then
            case Pipe.write upto chan of
-           (chan',items) ->         
+           (chan',items) ->
              Right (insertChan s from chan', items)
          else
            case writeChanNoAmb upto chan of
@@ -339,8 +343,8 @@ execItemsWithRules config rules items state = execItems items state
              let (nt,p1) = from
              let (_,p2) = upto
              Left (Ambiguity (show nt) p1 p2)
-           
-           Just (chan',items) ->         
+
+           Just (chan',items) ->
              Right (insertChan s from chan', items)
 
     writeChanNoAmb :: Upto a -> Chan a -> Maybe (Chan a, [Item])
@@ -355,7 +359,7 @@ execItemsWithRules config rules items state = execItems items state
        Nothing -> do
          let chan = Pipe.firstRead reader
          let items = predict from
-         (insertChan s from chan, items)               
+         (insertChan s from chan, items)
        Just chan -> do
          let (chan',items) = Pipe.read reader chan
          (insertChan s from chan', items)

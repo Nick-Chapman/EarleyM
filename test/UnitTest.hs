@@ -1,9 +1,9 @@
 module UnitTest(tests) where
 
-import Prelude hiding (fail,exp,seq)
 import qualified Data.Char as Char
-import Testing
-import EarleyM
+import           EarleyM
+import           Prelude   hiding (exp, fail, seq)
+import           Testing
 
 
 getDigit :: Lang Char (Gram Int)
@@ -25,7 +25,7 @@ incomplete pos = Left (SyntaxError (UnexpectedEOF pos))
 amb :: Ambiguity -> Either ParseError b
 amb a = Left (AmbiguityError a)
 
-           
+
 tests1 :: [IO Bool]
 tests1 = [
   run "" (incomplete 1),
@@ -151,7 +151,7 @@ tests4 = [
 -- counting outcomes...
 
 countAmb :: Either e [a] -> Int
-countAmb (Left _) = 0
+countAmb (Left _)   = 0
 countAmb (Right xs) = length xs
 
 tests6 :: [IO Bool]
@@ -188,7 +188,7 @@ unEff (Eff x) = x
 
 
 tests8 :: [IO Bool]
-tests8 = [ 
+tests8 = [
   run "" 3,
   run "a" 6, -- +3..
   run "ab" 9,
@@ -206,7 +206,7 @@ tests8 = [
 
 
 tests9 :: [IO Bool]
-tests9 = [ 
+tests9 = [
   run "" 3,
   run "a" 8, -- +5,6,7,8..
   run "ab" 14,
@@ -224,7 +224,7 @@ tests9 = [
 
 
 tests10 :: [IO Bool]
-tests10 = [ 
+tests10 = [
   run "." 8,
   run "a." 12, -- +4..
   run "ab." 16,
@@ -263,12 +263,12 @@ tests11 = [
 tests12 :: [IO Bool]
 tests12 = [
 
-  -- LINEAR in the length of the input 
+  -- LINEAR in the length of the input
   run "1;2" (18,1),
   run "12;34" (27,1), -- +9..
   run "123;456" (36,1),
   run "1234;5678" (45,1),
-  
+
   -- where the semi colons are seems not to matter (or to matter only linearly)
   run "1;2345678" (54,1),
   run "12;345678" (51,1), -- -3..
@@ -287,7 +287,7 @@ tests12 = [
   run "1234567;8" (36,1), -- +9,15,21
   run "123456;7;8" (51,2),
   run "12345;6;7;8" (72,3),
-  
+
   run "" (3,0)
   ]
   where
@@ -295,7 +295,7 @@ tests12 = [
     run = check (measure . parseAmb lang) tag
 
     measure parsing = (unEff (effort parsing), countAmb (outcome parsing))
-    
+
     lang = do
       token <- getToken
       let symbol x = do t <-token; if t==x then return () else fail
