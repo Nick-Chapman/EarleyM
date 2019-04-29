@@ -2,7 +2,7 @@ module Example.FunctionalLanguage(tests) where
 
 import qualified Data.Char as Char
 import           EarleyM
-import           Prelude   hiding (exp, fail)
+import           Prelude   hiding (exp, fail, pred)
 import           Testing
 
 digitOfChar :: Char -> Int
@@ -253,4 +253,3 @@ classifyParseAmbResult (Right as) = Multiple (length as) as
 classifyParseAmbResult (Left (UnexpectedTokenAt pos)) = No pos
 classifyParseAmbResult (Left (UnexpectedEOF pos)) = No pos
 classifyParseAmbResult (Left (ExpectedEOF pos)) = No pos
-

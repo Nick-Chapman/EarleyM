@@ -1,8 +1,8 @@
 module Example.Catalan(tests) where
 
 import           EarleyM
+import           Prelude hiding (seq)
 import           Testing
-
 
 tests :: [IO Bool]
 tests = [

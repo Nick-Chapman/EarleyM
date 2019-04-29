@@ -2,7 +2,8 @@ module Example.DictionaryLexing(tests) where
 
 import qualified Data.Char as Char
 import           EarleyM
-import           Prelude   hiding (fail)
+import           Prelude   hiding (fail, words)
+import qualified Prelude
 import           Testing
 
 -- This example constructs a very large grammar (from a dictionary), which is used to lex a sentence.

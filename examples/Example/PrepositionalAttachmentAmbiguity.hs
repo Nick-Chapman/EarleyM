@@ -73,6 +73,5 @@ test =
         f = fmap (map show) . outcome . parseAmb lang
 
 
-
 tests :: [IO Bool]
 tests =  [test]
