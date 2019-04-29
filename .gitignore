@@ -1,7 +1,3 @@
+.stack-work/
+EarleyM.cabal
 *~
-cabal.project.local
-dist
-dist-newstyle
-TAGS
-.cabal-sandbox
-cabal.sandbox.config

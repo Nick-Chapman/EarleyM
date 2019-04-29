@@ -1,0 +1,5 @@
+resolver: lts-13.19
+packages:
+- .
+extra-deps:
+- HMap-1.3.0
