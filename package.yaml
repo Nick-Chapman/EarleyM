@@ -20,6 +20,7 @@ dependencies:
 
 library:
   source-dirs: src
+  ghc-options:        -Wall
 
 tests:
   EarleyM-test:
@@ -32,6 +33,6 @@ tests:
     - Example.PrepositionalAttachmentAmbiguity
     - Example.FunctionalLanguage
     - Example.DictionaryLexing
-    - Example.Arith    
+    - Example.Arith
     ghc-options:        -Wall
     dependencies:       EarleyM

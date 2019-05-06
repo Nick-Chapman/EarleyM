@@ -3,6 +3,7 @@
 {-# LANGUAGE GADTs                     #-}
 {-# LANGUAGE RankNTypes                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
+{-# OPTIONS_GHC -Wno-name-shadowing    #-}
 
 -- | Monadic combinators for Earley Parsing
 module EarleyM (
