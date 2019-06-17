@@ -19,7 +19,8 @@ module EarleyM (
   Eff(..), Pos
   ) where
 
-import           Control.Monad (ap, liftM)
+import           Control.Applicative(Alternative,empty,(<|>))
+import           Control.Monad (ap, liftM, MonadPlus)
 import           Data.HMap     (HKey, HMap)
 import qualified Data.HMap     as HMap
 import           Data.Map      (Map)
@@ -40,6 +41,12 @@ instance Applicative Gram where pure = return; (<*>) = ap
 instance Monad Gram where
   return = Ret
   (>>=) = bind
+
+instance Alternative Gram where
+  empty = alts []
+  (<|>) a b = alts [a,b]
+
+instance MonadPlus Gram
 
 bind :: Gram a -> (a -> Gram b) -> Gram b
 bind gram f = case gram of
